@@ -20,7 +20,8 @@ venv/
 .idea/
 
 # Experiments and results
-experiments/results/
+experiments/
+notebooks/
 *.log
 
 # Environment variables

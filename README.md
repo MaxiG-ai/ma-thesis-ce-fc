@@ -25,16 +25,14 @@ This repository contains the implementation framework for researching and evalua
 ├── config/             # Configuration files
 ├── evaluation/         # Evaluation logic and metrics
 ├── memory/             # Memory enhancement components
-├── experiments/        # Experiment scripts and results
 ├── tests/              # Test suite
 │   ├── unit/
 │   ├── integration/
 │   └── e2e/
-├── datasets/           # Benchmark datasets (Git submodules)
-│   ├── mcp-bench/      # MCP-Bench benchmark
-│   ├── nestful/        # NESTFUL benchmark
-│   └── tool-retrieval/ # Tool Retrieval benchmark
-└── notebooks/          # Jupyter notebooks for analysis
+└── datasets/           # Benchmark datasets (Git submodules)
+    ├── mcp-bench/      # MCP-Bench benchmark
+    ├── nestful/        # NESTFUL benchmark
+    └── tool-retrieval/ # Tool Retrieval benchmark
 ```
 
 ## Installation
@@ -113,7 +111,6 @@ uv run pytest tests/unit/
 - **models/**: Abstraction layer for LLM providers (Ollama, OpenAI, etc.)
 - **memory/**: Context engineering and memory enhancement modules
 - **evaluation/**: Benchmark integration and evaluation metrics
-- **experiments/**: Experiment scripts and result storage
 - **config/**: Configuration management
 
 ## Usage
