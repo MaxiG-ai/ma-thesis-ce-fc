@@ -1,0 +1,22 @@
+# Nestful Benchmark Evaluation Configuration
+
+[nestful]
+model = "ollama"
+model_name = "llama3.1:8b"
+
+# Dataset configuration
+dataset = "datasets/nestful/data_v2/nestful_data.jsonl"
+
+# Generation parameters
+temperature = 0.3
+max_tokens = 1000
+batch_size = 1
+
+# In-context learning
+icl_count = 3
+
+# Data limit (number of examples to process, set to null or omit for all data)
+data_limit = 15
+
+# Output configuration
+save_directory = "results"
