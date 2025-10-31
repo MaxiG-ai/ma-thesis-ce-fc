@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Optional, Dict, List, Any
 
 
-class TaskAdapter(ABC):
+class BenchmarkAdapter(ABC):
     """
     Abstract base class for dataset-specific adapters.
 
@@ -13,25 +13,9 @@ class TaskAdapter(ABC):
     """
 
     @abstractmethod
-    def load_tasks(
-        self, dataset_path: str, filters: Optional[Dict] = None
-    ) -> List[UnifiedTask]:
-        """
-        Load tasks from the dataset.
-
-        Args:
-            dataset_path: Path to dataset directory/file
-            filters: Optional filter criteria (dataset-specific)
-
-        Returns:
-            List of UnifiedTask objects
-        """
-        pass
-
-    @abstractmethod
-    def execute_task(
-        self, task: UnifiedTask, context: ExecutionContext
-    ) -> Tuple[Any, Dict[str, Any]]:
+    def run_benchmark(
+        self, 
+    ):
         """
         Execute a single task using the specified model.
 
@@ -48,7 +32,7 @@ class TaskAdapter(ABC):
         pass
 
     @abstractmethod
-    def evaluate_result(self, task: UnifiedTask, raw_output: Any) -> bool:
+    def evaluate_result(self):
         """
         Evaluate whether the task result is correct.
 

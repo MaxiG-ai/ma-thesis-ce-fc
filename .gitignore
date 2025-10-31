@@ -17,12 +17,6 @@ venv/
 
 # IDE
 .vscode/
-.idea/
-
-# Experiments and results
-experiments/
-notebooks/
-*.log
 
 # Environment variables
 .env
@@ -36,3 +30,4 @@ uv.lock
 
 # all result files
 results/*
+uv.lock
