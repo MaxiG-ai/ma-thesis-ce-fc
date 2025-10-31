@@ -1,5 +1,5 @@
 [submodule "datasets/mcp-bench"]
-	path = datasets/mcp-bench
+	path = datasets/mcp_bench
 	url = https://github.com/Accenture/mcp-bench.git
 [submodule "datasets/nestful"]
 	path = datasets/nestful
