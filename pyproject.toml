@@ -8,10 +8,14 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "aiohttp>=3.13.2",
     "httpx>=0.28.1",
+    "json-repair>=0.52.3",
     "jsonlines>=4.0.0",
     "langchain-ollama>=1.0.0",
+    "mcp>=1.20.0",
     "ollama>=0.6.0",
+    "openai>=2.6.1",
     "pydantic>=2.12.3",
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
@@ -22,4 +26,9 @@ dependencies = [
     "toml>=0.10.2",
     "tqdm>=4.67.1",
     "transformers>=4.57.1",
+]
+
+[tool.uv.workspace]
+members = [
+    "datasets/mcp_bench",
 ]

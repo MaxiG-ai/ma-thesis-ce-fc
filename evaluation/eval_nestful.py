@@ -1,17 +1,10 @@
 import os
 import json
 import toml
-import sys
 import gc
-
-# Add the nestful src directory to path for proper imports
-base_dir = os.path.dirname(os.path.abspath(__file__))
-nestful_src_path = os.path.join(base_dir, "..", "datasets", "nestful", "src")
-sys.path.insert(0, nestful_src_path)
-
-from utils import read_jsonlines, write_jsonlines
 from langchain_ollama.llms import OllamaLLM
-from instruct_data_prep import get_instruct_data
+from datasets.nestful.src.utils import read_jsonlines, write_jsonlines
+from datasets.nestful.src.instruct_data_prep import get_instruct_data
 
 from BenchmarkAdapter import BenchmarkAdapter
 
@@ -19,6 +12,7 @@ class NestfulBenchmark(BenchmarkAdapter):
     
     def __init__(self, cfg_path):
         config_path = os.path.join(os.path.dirname(__file__), cfg_path)
+        self.base_dir = os.path.dirname(os.path.abspath(__file__))
         full_config = toml.load(config_path)
         self.cfg = full_config.get("nestful")
     
@@ -26,7 +20,9 @@ class NestfulBenchmark(BenchmarkAdapter):
         print("### Loading Data...")
 
         # Construct absolute path relative to the evaluation directory
-        dataset_path = os.path.join(base_dir, "..", self.cfg["dataset"])
+        dataset_path = os.path.join(
+            self.base_dir , "..", self.cfg["dataset"]
+        )
         data = read_jsonlines(dataset_path)
 
         for i in range(len(data)):
@@ -83,7 +79,7 @@ class NestfulBenchmark(BenchmarkAdapter):
 
         print("### Saving...")
         save_path = os.path.join(
-            base_dir,
+            self.base_dir,
             "..",
             self.cfg["save_directory"],
             f"nestful_{icl_count}",
@@ -91,7 +87,7 @@ class NestfulBenchmark(BenchmarkAdapter):
             "output.jsonl"
         )
         print(f"### Save Path: {save_path}")
-        os.makedirs(os.path.join(base_dir, "..", self.cfg["save_directory"], f"nestful_{icl_count}", self.cfg["model_name"]), exist_ok=True)
+        os.makedirs(os.path.join(self.base_dir, "..", self.cfg["save_directory"], f"nestful_{icl_count}", self.cfg["model_name"]), exist_ok=True)
         write_jsonlines(output_list, save_path)
 
         print("### DONE...!!!")

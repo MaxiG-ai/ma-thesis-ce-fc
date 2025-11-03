@@ -20,3 +20,35 @@ data_limit = 15
 
 # Output configuration
 save_directory = "results"
+
+# MCP Bench Benchmark Evaluation Configuration
+
+[mcpbench]
+model = "ollama"
+model_name = "llama3.1:8b"
+
+# Dataset configuration
+tasks_file = "datasets/mcp_bench/tasks/tasks.json"
+
+# Generation parameters
+temperature = 0.3
+max_tokens = 1000
+
+# Task limit (number of tasks to process, set to null or omit for all tasks)
+task_limit = 5
+
+# Server configuration
+enable_distraction_servers = false
+distraction_count = 0
+
+# Evaluation configuration
+enable_judge_stability = true
+filter_problematic_tools = true
+concurrent_summarization = true
+use_fuzzy_descriptions = false
+
+# Output configuration
+save_directory = "results/mcpbench"
+
+# Multi-model support (optional - if specified, overrides model_name)
+# model_names = ["llama3.1:8b", "mistral:7b", "phi3:mini"]

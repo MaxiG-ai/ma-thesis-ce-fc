@@ -8,6 +8,7 @@ This file gives concise, actionable guidance for an AI coding agent to be produc
   - Incorrect: `pytest`
 - Python runtime: 3.13+. Use the project venv if present (`source .venv/bin/activate`).
 - Tests must be real `pytest` tests located under `tests/`. Do not create throwaway scripts.
+- Never ever create usage_examples unless I specifically ask you to do so.
 
 ### Where to start (quick reading list)
 - `AGENTS.md` — project testing and package-management rules (uv prefix, test style).

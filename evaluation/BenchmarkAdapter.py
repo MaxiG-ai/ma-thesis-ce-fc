@@ -13,34 +13,43 @@ class BenchmarkAdapter(ABC):
     """
 
     @abstractmethod
-    def run_benchmark(
-        self, 
-    ):
+    async def run_benchmark(
+        self,
+        selected_models: Optional[List[str]] = None,
+        task_limit: Optional[int] = None
+    ) -> Dict[str, Any]:
         """
-        Execute a single task using the specified model.
+        Execute benchmark tasks using the specified model(s).
 
         Args:
-            task: The task to execute
-            context: Execution context (model, config, etc.)
+            selected_models: Optional list of model names to run. If None, uses config default.
+            task_limit: Optional limit on number of tasks to run. If None, runs all tasks.
 
         Returns:
-            Tuple of (raw_output, metrics_dict) where metrics_dict contains:
-            - token_usage: int (total tokens used)
-            - time_taken: float (seconds)
-            - Any other relevant metrics
+            Dict containing:
+            - models: Dict[model_name, results] with task results per model
+            - metadata: Dict with timestamp, config, and aggregate metrics
+            - Any other benchmark-specific data
         """
         pass
 
     @abstractmethod
-    def evaluate_result(self):
+    def evaluate_result(
+        self,
+        task: Dict[str, Any],
+        execution_result: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Evaluate whether the task result is correct.
 
         Args:
-            task: The task that was executed
-            raw_output: The raw output from execution
+            task: The task that was executed (with expected outputs/ground truth)
+            execution_result: The raw output from execution
 
         Returns:
-            Boolean indicating success
+            Dict containing:
+            - success: bool indicating overall success
+            - score: float (0.0-1.0) indicating quality
+            - details: Dict with dimension-specific scores and reasoning
         """
         pass
