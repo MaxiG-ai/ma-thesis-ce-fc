@@ -1,9 +1,9 @@
-[submodule "datasets/mcp-bench"]
-	path = datasets/mcp_bench
-	url = https://github.com/Accenture/mcp-bench.git
 [submodule "datasets/nestful"]
 	path = datasets/nestful
 	url = https://github.com/MaxiG-ai/nestful-ollama.git
 [submodule "datasets/tool-retrieval"]
 	path = datasets/tool-retrieval
 	url = https://github.com/mangopy/tool-retrieval-benchmark.git
+[submodule "datasets/mcp_bench"]
+	path = datasets/mcp_bench
+	url = https://github.com/Accenture/mcp-bench.git
