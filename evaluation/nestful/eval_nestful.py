@@ -1,6 +1,6 @@
 import logging
 import asyncio
-from nestful_adapter import NestfulAdapter
+from evaluation.nestful.nestful_adapter import NestfulAdapter
 
 # Configure logging
 logging.basicConfig(

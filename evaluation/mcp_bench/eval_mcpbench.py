@@ -9,13 +9,13 @@ import sys
 import logging
 import asyncio
 from pathlib import Path
+from mcpbench_adapter import MCPBenchAdapter
 
 # Add project root to Python path
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import after path is set
-from evaluation.mcpbench_adapter import MCPBenchAdapter  # noqa: E402
 
 # Configure logging
 logging.basicConfig(
@@ -38,10 +38,7 @@ async def main():
         
         # Run benchmark
         logger.info("Starting benchmark execution...")
-        results = await adapter.run_benchmark(
-            selected_models=adapter.get_selected_models(),
-            task_limit=adapter.cfg.get("task_limit")
-        )
+        results = await adapter.run_benchmark()
         
         # Save results
         output_file = await adapter.save_results(

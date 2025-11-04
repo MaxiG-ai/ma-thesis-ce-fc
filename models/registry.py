@@ -1,6 +1,6 @@
-from typing import Dict, Type
-from base import BaseModel
-from providers.ollama import OllamaModel
+from typing import Dict, Type, List
+from .base import BaseModel
+from .providers.ollama import OllamaModel
 
 class ModelRegistry:
     """Central registry for model discovery."""
@@ -21,3 +21,8 @@ class ModelRegistry:
     def register_provider(cls, name: str, provider_cls: Type[BaseModel]) -> None:
         """Register a new model provider."""
         cls._providers[name] = provider_cls
+    
+    @classmethod
+    def get_available_providers(cls) -> List[str]:
+        """Get list of available model provider names."""
+        return list(cls._providers.keys())

@@ -1,3 +1,233 @@
+## Registry & Orchestrator Architecture Summary
+
+The current evaluation system implements a comprehensive multi-component architecture that enables systematic evaluation across models, memory methods, and benchmarks. This section provides an overview of the registry pattern and orchestration components implemented in the codebase.
+
+### Core Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Multi-Component Evaluation System                 │
+└─────────────────────────┬───────────────────────────────────────────┘
+                          │
+┌─────────────────────────▼───────────────────────────────────────────┐
+│                   EvaluationOrchestrator                             │
+│  • Coordinates model × memory × benchmark combinations               │
+│  • Manages concurrent/sequential execution                          │
+│  • Handles result aggregation and reporting                         │
+└─────────────────────────┬───────────────────────────────────────────┘
+                          │
+┌─────────────────────────▼───────────────────────────────────────────┐
+│                    ComponentRegistry                                 │
+│  • Unified interface for all component types                        │
+│  • Delegates to specialized registries                              │
+│  • Provides factory methods and metadata access                     │
+└─────────────────────────┬───────────────────────────────────────────┘
+                          │
+┌─────────────────────────▼───────────────────────────────────────────┐
+│              Specialized Component Registries                        │
+│  ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐       │
+│  │  ModelRegistry  │ │ MemoryRegistry  │ │BenchmarkRegistry│       │
+│  │ ─────────────── │ │ ─────────────── │ │ ─────────────── │       │
+│  │ • Ollama        │ │ • Truncation    │ │ • Nestful       │       │
+│  │ • OpenRouter    │ │ • [Future]      │ │ • MCPBench      │       │
+│  │ • [Future]      │ │                 │ │ • [Future]      │       │
+│  └─────────────────┘ └─────────────────┘ └─────────────────┘       │
+└─────────────────────────┬───────────────────────────────────────────┘
+                          │
+┌─────────────────────────▼───────────────────────────────────────────┐
+│                     ResultsStorage                                   │
+│  • SQLite database for persistence                                  │
+│  • Immediate write-after-execution                                  │
+│  • JSON export capabilities                                         │
+│  • Query interface for analysis                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Component Details
+
+#### 1. ComponentRegistry (Unified Interface)
+
+**Location**: `evaluation/registries.py`  
+**Purpose**: Single entry point for creating and managing all evaluation components
+
+**Key Features**:
+- **Delegation Pattern**: Routes requests to specialized registries (ModelRegistry, MemoryRegistry, BenchmarkRegistry)
+- **Factory Methods**: `create_model()`, `create_memory_method()`, `create_benchmark()`
+- **Registration**: `register_model()`, `register_memory_method()`, `register_benchmark()`
+- **Discovery**: `get_available_components()` returns all available components
+- **Metadata Access**: Component information and configuration details
+
+**Example Usage**:
+```python
+registry = ComponentRegistry()
+
+# Create components
+model = registry.create_model("ollama", "llama3.2:3b")
+memory = registry.create_memory_method("truncation", max_tokens=500)
+benchmark = registry.create_benchmark("nestful", dataset_path="...")
+
+# Discover available components
+components = registry.get_available_components()
+# Returns: {"models": [...], "memory_methods": [...], "benchmarks": [...]}
+```
+
+#### 2. Specialized Registries
+
+##### ModelRegistry
+**Location**: `models/registry.py`  
+**Purpose**: Manage LLM providers and model instances  
+**Registered Components**: Ollama, OpenRouter (extensible for other providers)
+
+##### MemoryRegistry  
+**Location**: `memory/registry.py`  
+**Purpose**: Manage memory constraint methods  
+**Registered Components**: TruncationMemory (extensible for sliding window, attention-based, etc.)
+
+##### BenchmarkRegistry
+**Location**: `evaluation/registries.py`  
+**Purpose**: Manage benchmark adapters  
+**Registered Components**: Nestful, MCPBench adapters (extensible for new benchmarks)
+
+#### 3. EvaluationOrchestrator
+
+**Location**: `evaluation/orchestrator.py`  
+**Purpose**: Coordinate multi-component evaluation execution
+
+**Key Responsibilities**:
+- **Combination Generation**: Creates all model × memory × benchmark combinations
+- **Execution Management**: Sequential or concurrent execution with configurable limits
+- **Component Integration**: Uses ComponentRegistry to instantiate components
+- **Result Aggregation**: Collects and summarizes evaluation results
+- **Error Handling**: Graceful failure handling with detailed error reporting
+
+**Configuration-Driven**:
+```toml
+# evaluation/config.toml
+model_names = ["llama3.2:3b", "llama3.1:8b"]
+memory_methods = ["truncation"]
+benchmarks = ["nestful", "mcpbench"]
+concurrent_evaluations = 1
+```
+
+**Execution Flow**:
+1. Parse configuration to extract component specifications
+2. Generate all combinations (models × memory methods × benchmarks)
+3. For each combination:
+   - Create component instances via ComponentRegistry
+   - Execute evaluation with proper context
+   - Store results immediately via ResultsStorage
+4. Return comprehensive summary with success metrics
+
+#### 4. ResultsStorage (SQLite Persistence)
+
+**Location**: `evaluation/results.py`  
+**Purpose**: Reliable, queryable storage for evaluation results
+
+**Database Schema**:
+```sql
+-- Main results table
+CREATE TABLE evaluation_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL,
+    model_name TEXT NOT NULL,
+    model_provider TEXT NOT NULL,
+    memory_method TEXT NOT NULL,
+    benchmark TEXT NOT NULL,
+    status TEXT NOT NULL,  -- 'success' or 'error'
+    duration_seconds REAL,
+    results_json TEXT,     -- Flexible JSON for benchmark-specific results
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexes for efficient querying
+CREATE INDEX idx_model_method_benchmark ON evaluation_runs(model_name, memory_method, benchmark);
+CREATE INDEX idx_timestamp ON evaluation_runs(timestamp);
+```
+
+**Key Features**:
+- **Immediate Persistence**: Results written after each evaluation (crash-resistant)
+- **JSON Export**: `export_to_json()` for interoperability with analysis tools
+- **Query Interface**: `query_results()` with flexible filtering
+- **Metadata Storage**: Comprehensive result metadata for analysis
+
+### Extensibility Patterns
+
+#### Adding New Models
+```python
+# 1. Implement provider in models/providers/
+class NewProvider(BaseModel):
+    def generate_text(self, prompt, **kwargs):
+        # Implementation
+        pass
+
+# 2. Register in models/registry.py
+ModelRegistry.register_provider("new_provider", NewProvider)
+
+# 3. Use in config
+model_names = ["new_provider:model_name"]
+```
+
+#### Adding New Memory Methods
+```python
+# 1. Implement method in memory/methods/
+class SlidingWindowMemory(BaseMemoryMethod):
+    def process(self, text: str) -> str:
+        # Implementation
+        pass
+
+# 2. Register in memory/registry.py
+MemoryRegistry.register_method("sliding_window", SlidingWindowMemory)
+
+# 3. Use in config
+memory_methods = ["truncation", "sliding_window"]
+```
+
+#### Adding New Benchmarks
+```python
+# 1. Implement adapter
+class NewBenchmarkAdapter(BenchmarkAdapter):
+    def run_evaluation(self, model, memory_method, config):
+        # Implementation
+        pass
+
+# 2. Register in evaluation/registries.py
+BenchmarkRegistry.register_benchmark("new_benchmark", NewBenchmarkAdapter)
+
+# 3. Use in config
+benchmarks = ["nestful", "mcpbench", "new_benchmark"]
+```
+
+### Design Principles
+
+1. **Registry Pattern**: Centralized component discovery and creation
+2. **Factory Pattern**: Consistent instantiation across component types
+3. **Adapter Pattern**: Uniform interface for different benchmark types
+4. **Separation of Concerns**: Clear boundaries between orchestration, execution, and storage
+5. **Configuration-Driven**: TOML-based configuration for reproducible experiments
+6. **Fail-Safe Persistence**: Immediate result storage prevents data loss
+7. **Extensible Architecture**: New components require minimal integration effort
+
+### Current Implementation Status
+
+**✅ Implemented Components**:
+- ComponentRegistry with full delegation
+- ModelRegistry (Ollama, OpenRouter providers)  
+- MemoryRegistry (TruncationMemory)
+- BenchmarkRegistry (Nestful, MCPBench adapters)
+- EvaluationOrchestrator with multi-component support
+- SQLite ResultsStorage with JSON export
+- Configuration-driven evaluation pipeline
+
+**🔄 Integration Points**:
+- Memory methods integrate with all benchmark types
+- Model providers work across all benchmarks  
+- Results storage captures all evaluation combinations
+- Configuration supports flexible component specification
+
+This architecture provides a robust foundation for systematic evaluation across multiple dimensions while maintaining extensibility for future research directions.
+
+---
+
 ## Overview
 
 This document outlines the architectural design for a unified task execution framework that standardizes how tasks from both the **mcp-bench** and **nestful** datasets are executed, evaluated, and persisted. The design prioritizes **maximum control**, **extensibility**, and **data resilience** through sequential execution with immediate result persistence.
