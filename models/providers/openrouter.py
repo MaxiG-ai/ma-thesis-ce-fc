@@ -1,11 +1,11 @@
-import ollama
+import openrouter
+from typing import Dict, Any
 from ..base import BaseModel
 
-class OllamaModel(BaseModel):
-    """Provides a connector to local Ollama"""
+class OpenRouterModel(BaseModel): #TODO: Properly implement OpenRouterModel class
+    """Provides a connector to local OpenRouter"""
     def __init__(self, model_name: str, **kwargs):
         self.model_name = model_name
-        # TODO: Evaluate if it can be replaced by ollama module directly
 
     def chatresponse_to_dict(self, response):
         """Convert ChatResponse object to dictionary format"""
@@ -30,23 +30,8 @@ class OllamaModel(BaseModel):
             }
         }
 
-    async def generate_text(self, prompt, system=None, **kwargs):
-        # if system prompt provided adds system prompt
-        full_prompt = f"{system}\n\n{prompt}" if system else prompt
-
-        # get the response from the model using ollama
-        try:
-            response = ollama.chat(model=self.model_name, messages=[
-                {
-                    'role': 'user',
-                    'content': full_prompt,
-                },
-            ])
-
-            return self.chatresponse_to_dict(response)
-
-        except ollama.ResponseError as e:
-            raise TypeError(f"Ollama model error: {str(e)}") from e
+    async def generate_text(self, prompt, system=None, **kwargs) -> Dict[str, Any]:
+        return dict()
         
     def get_model_info(self):
-        return {'model': self.model_name, 'provider' : 'ollama'}
+        return {'model': self.model_name, 'provider' : 'openrouter'}

@@ -1,6 +1,6 @@
 from typing import Dict, Type
-from .base import BaseModel
-from .providers.ollama import OllamaModel
+from base import BaseModel
+from providers.ollama import OllamaModel
 
 class ModelRegistry:
     """Central registry for model discovery."""

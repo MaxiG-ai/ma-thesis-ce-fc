@@ -23,7 +23,7 @@ class BaseModel(ABC):
         pass
     
     @abstractmethod
-    async def get_model_info(self) -> Dict[str, Any]:
+    def get_model_info(self) -> Dict[str, Any]:
         """Return model name, provider, version"""
         pass
     
