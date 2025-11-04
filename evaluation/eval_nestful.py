@@ -1,108 +1,22 @@
-import os
-import json
-import toml
-import gc
-from langchain_ollama.llms import OllamaLLM
-from datasets.nestful.src.utils import read_jsonlines, write_jsonlines
-from datasets.nestful.src.instruct_data_prep import get_instruct_data
+import logging
+import asyncio
+from nestful_adapter import NestfulAdapter
 
-from BenchmarkAdapter import BenchmarkAdapter
-
-class NestfulBenchmark(BenchmarkAdapter):
-    
-    def __init__(self, cfg_path):
-        config_path = os.path.join(os.path.dirname(__file__), cfg_path)
-        self.base_dir = os.path.dirname(os.path.abspath(__file__))
-        full_config = toml.load(config_path)
-        self.cfg = full_config.get("nestful")
-    
-    def run_benchmark(self, ):
-        print("### Loading Data...")
-
-        # Construct absolute path relative to the evaluation directory
-        dataset_path = os.path.join(
-            self.base_dir , "..", self.cfg["dataset"]
-        )
-        data = read_jsonlines(dataset_path)
-
-        for i in range(len(data)):
-            data[i]["tools"] = json.dumps(data[i]["tools"])
-            data[i]["gold_answer"] = json.dumps(data[i]["gold_answer"])
-            data[i]["output"] = json.dumps(data[i]["output"])
-
-        print("### Preparing Instruct Data...")
-        instruct_data = get_instruct_data(
-            data,
-            self.cfg["model"],
-            self.cfg["model_name"],
-            self.cfg["icl_count"],
-            data_limit=self.cfg.get("data_limit")
-        )
-
-        print("### Loading Model...")
-
-        llm = OllamaLLM(
-            model=self.cfg["model_name"],
-            temperature=self.cfg["temperature"],
-            num_predict=self.cfg["max_tokens"],
-        )
-
-        prompts = [sample["input"] for sample in instruct_data]
-
-        print("### Starting Generation...")
-        response, output_list = [], []
-        batch_size = self.cfg["batch_size"]
-        count_total_batches = -(-len(prompts) // batch_size) 
-
-        for idx in range(0, len(prompts), batch_size):
-            print(f"### At batch {idx // batch_size + 1} out of {count_total_batches} batches...")
-            prompt_batch = prompts[idx: idx + batch_size]
-
-            for prompt in prompt_batch:
-                try:
-                    output = llm.invoke(prompt)
-                    response.append(output.strip())
-                except Exception as e:
-                    print(f"Error generating for prompt: {e}")
-                    response.append("")
-
-        for idx in range(len(response)):
-            temp = instruct_data[idx]
-            temp["generated_text"] = response[idx]
-            output_list.append(temp)
-
-        # Clean up
-        del llm
-        gc.collect()
-
-        icl_count = self.cfg["icl_count"]
-
-        print("### Saving...")
-        save_path = os.path.join(
-            self.base_dir,
-            "..",
-            self.cfg["save_directory"],
-            f"nestful_{icl_count}",
-            self.cfg["model_name"],
-            "output.jsonl"
-        )
-        print(f"### Save Path: {save_path}")
-        os.makedirs(os.path.join(self.base_dir, "..", self.cfg["save_directory"], f"nestful_{icl_count}", self.cfg["model_name"]), exist_ok=True)
-        write_jsonlines(output_list, save_path)
-
-        print("### DONE...!!!")
-    
-    def evaluate_result(self):
-        # can be implemented using the nestful/src/scorer.py file
-        pass
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
     
 
 if __name__ == "__main__":
     
-    nestful_b = NestfulBenchmark("config.toml")
+    nestful_b = NestfulAdapter("config.toml")
 
-    print("Configuration:")
+    logger.info("Configuration:")
     for key, value in nestful_b.cfg.items():
-        print(f"{key}: {value}")
+        logger.info(f"{key}: {value}")
 
-    nestful_b.run_benchmark()
+    # run the async benchmark and await its result
+    asyncio.run(nestful_b.run_benchmark())

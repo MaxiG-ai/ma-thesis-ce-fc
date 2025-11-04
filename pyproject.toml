@@ -6,7 +6,7 @@ authors = [
     {name = "Maximilian Graf"}
 ]
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "aiohttp>=3.13.2",
     "httpx>=0.28.1",
@@ -31,4 +31,5 @@ dependencies = [
 [tool.uv.workspace]
 members = [
     "datasets/mcp_bench",
+    "datasets/nestful",
 ]

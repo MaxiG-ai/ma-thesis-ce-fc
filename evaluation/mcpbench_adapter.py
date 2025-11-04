@@ -7,310 +7,198 @@ with the config-driven evaluation system.
 import sys
 import json
 import logging
-import tomllib
+import os
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Any, Optional
+from types import SimpleNamespace
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from evaluation.BenchmarkAdapter import BenchmarkAdapter
-from datasets.mcp_bench.benchmark.runner import BenchmarkRunner
-from datasets.mcp_bench.benchmark.evaluator import TaskEvaluator
-from datasets.mcp_bench.utils.local_server_config import LocalServerConfigLoader
+from datasets.mcp_bench.benchmark.runner import (
+    _create_runner_and_get_models,
+    _determine_selected_models,
+    _print_configuration,
+
+)
 
 logger = logging.getLogger(__name__)
 
 
 class MCPBenchAdapter(BenchmarkAdapter):
-    """
-    Adapter for MCP Benchmark evaluation.
+    """Adapter for MCP Benchmark evaluation."""
     
-    This adapter integrates the MCP Benchmark runner with the config-driven
-    evaluation system, providing a standardized interface for running benchmarks
-    and evaluating results.
-    
-    Attributes:
-        config: Configuration dictionary from TOML file
-        model_provider: LLM provider name (e.g., "ollama", "openai")
-        model_name: Single model name or None if using model_names
-        model_names: List of model names for multi-model runs
-        tasks_file: Path to tasks JSON file
-        temperature: Temperature for LLM generation
-        max_tokens: Maximum tokens for LLM generation
-        task_limit: Optional limit on number of tasks
-        enable_distraction_servers: Whether to include distraction servers
-        distraction_count: Number of distraction servers
-        enable_judge_stability: Whether to enable judge stability checks
-        filter_problematic_tools: Whether to filter problematic tools
-        concurrent_summarization: Whether to summarize concurrently
-        use_fuzzy_descriptions: Whether to use fuzzy descriptions
-        save_directory: Directory for saving results
-    """
-    
-    # Required config fields
-    REQUIRED_FIELDS = ["model", "model_name", "tasks_file"]
-    
-    # Default values for optional fields
-    DEFAULTS = {
-        "temperature": 0.3,
-        "max_tokens": 1000,
-        "task_limit": None,
-        "enable_distraction_servers": False,
-        "distraction_count": 0,
-        "enable_judge_stability": True,
-        "filter_problematic_tools": True,
-        "concurrent_summarization": True,
-        "use_fuzzy_descriptions": False,
-        "save_directory": "results/mcpbench",
-        "model_names": None,
-    }
-    
-    # Supported model providers
-    SUPPORTED_PROVIDERS = ["ollama", "openai", "azure", "anthropic"]
-    
-    def __init__(self, config: Dict[str, Any]):
-        """
-        Initialize the MCP Bench adapter.
+    def __init__(self, config_path: str = "evaluation/config.toml"):
+        """Initialize the MCP Bench adapter.
         
         Args:
-            config: Configuration dictionary with benchmark settings
-            
-        Raises:
-            ValueError: If required config fields are missing or invalid
+            config_path: Path to config.toml file. Defaults to "evaluation/config.toml".
         """
-        self.config = config
-        self._validate_config()
-        self._load_config_values()
+        super().__init__("mcpbench", config_path)
         self._runner = None
-        self._evaluator = None
-    
-    def _validate_config(self) -> None:
-        """Validate that required config fields are present and valid."""
-        # Check required fields (excluding model_name if model_names is provided)
-        for field in self.REQUIRED_FIELDS:
-            if field == "model_name" and "model_names" in self.config:
-                continue  # model_names can substitute for model_name
-            if field not in self.config:
-                raise ValueError(f"Missing required config field: {field}")
-        
-        # Validate tasks_file
-        tasks_file = self.config.get("tasks_file", "")
-        if not tasks_file or not isinstance(tasks_file, str):
-            raise ValueError("tasks_file cannot be empty")
-    
-    def _load_config_values(self) -> None:
-        """Load configuration values with defaults."""
-        # Apply defaults
-        for key, default_value in self.DEFAULTS.items():
-            setattr(self, key, self.config.get(key, default_value))
+        self._last_results = None
 
-        # Read commands json path from config (optional). Default to the
-        # workspace-relative commands.json inside the datasets package so
-        # relative code that used "mcp_servers/commands.json" continues to work
-        # when invoked from project root.
-        self.commands_json_path = self.config.get(
-            "commands_json_path",
-            "datasets/mcp_bench/mcp_servers/commands.json"
-        )
-        
-        # Load core fields
-        self.model_provider = self.config["model"]
-        self.model_name = self.config.get("model_name")
-        self.model_names = self.config.get("model_names")
-        self.tasks_file = self.config["tasks_file"]
-    
-    def _validate_model_provider(self) -> None:
-        """
-        Validate that the model provider is supported.
-        
-        Raises:
-            ValueError: If model provider is not supported
-        """
-        if self.model_provider not in self.SUPPORTED_PROVIDERS:
-            raise ValueError(
-                f"Unsupported model provider: {self.model_provider}. "
-                f"Supported providers: {', '.join(self.SUPPORTED_PROVIDERS)}"
-            )
-    
+    ### LIMITING TASKS ###
+    # it seems tasks can either be limited by
+    # - changing the task file
+    # - overriding the class BenchmarkRunner to accept a task limit 
+
+    ### MCP SERVER CONFIGURATION ###
+    # Read by `load_server_configs()` -> Should als be in config.toml
+
+    ### MCP SERVER COMMANDS ###
+    # Read by `load_commands_config()` -> TODO: Currently not working because of PATH issues
+
+    ### EXECUTE TASKS ###
+    # implemented in `execute_single_task_with_model()` in BenchmarkRunner
+
+    ### RUN BENCHMARK ###
+    # `_run_single_file_benchmark_core` in BenchmarkRunner
+
+    # Questions:
+    # - How to handle distraction servers?
+    # - Where to handle the LLM as a judge server?
+
+    # TODO: replace Step 1: with config-driven approach
+
     def get_selected_models(self) -> List[str]:
-        """
-        Get the list of models to run.
+        """Get the list of models to run."""
+        if "model_names" in self.cfg:
+            return self.cfg["model_names"]
+        raise ValueError("model_names must be specified in the configuration")
+
+    def parse_arguments_from_config(self) -> SimpleNamespace:
+        """Create an args namespace from config.toml instead of command line arguments."""
+        args = SimpleNamespace()
         
-        Returns:
-            List of model names
-        """
-        if self.model_names:
-            return self.model_names
-        elif self.model_name:
-            return [self.model_name]
-        else:
-            raise ValueError("Either model_name or model_names must be specified")
-    
-    @classmethod
-    def load_config_from_file(
-        cls,
-        config_path: str,
-        section: str = "mcpbench"
-    ) -> Dict[str, Any]:
-        """
-        Load configuration from a TOML file.
+        # Model selection
+        args.models = self.cfg.get("model_names", ["o4-mini"])
+        args.list_models = False  # This is a command-line only flag
         
-        Args:
-            config_path: Path to the TOML configuration file
-            section: Section name in the TOML file (default: "mcpbench")
-            
-        Returns:
-            Configuration dictionary
-            
-        Raises:
-            FileNotFoundError: If config file doesn't exist
-            ValueError: If section is not found in config
-        """
-        config_file = Path(config_path)
-        if not config_file.exists():
-            raise FileNotFoundError(f"Config file not found: {config_path}")
+        # File paths
+        args.tasks_file = self.cfg.get("tasks_file", None)
+        args.output = self.cfg.get("output", None)
         
-        with open(config_file, "rb") as f:
-            full_config = tomllib.load(f)
+        # Logging
+        args.verbose = self.cfg.get("verbose", False)
         
-        if section not in full_config:
-            raise ValueError(
-                f"Section '{section}' not found in config file. "
-                f"Available sections: {', '.join(full_config.keys())}"
-            )
+        # Server configuration
+        args.distraction_count = self.cfg.get("distraction_count", 10)
         
-        return full_config[section]
-    
+        # Feature toggles (note: config uses enable_*, args uses disable_*)
+        args.disable_judge_stability = not self.cfg.get("enable_judge_stability", True)
+        args.disable_filter_problematic_tools = not self.cfg.get("filter_problematic_tools", True)
+        args.disable_concurrent_summarization = not self.cfg.get("concurrent_summarization", True)
+        args.disable_fuzzy = not self.cfg.get("use_fuzzy_descriptions", False)
+        
+        # Cache configuration
+        args.enable_cache = self.cfg.get("enable_cache", False)
+        args.cache_ttl = self.cfg.get("cache_ttl", 0)
+        args.cache_dir = self.cfg.get("cache_dir", "./cache")
+        
+        return args
+
+    def parse_and_validate_args_from_config(self) -> tuple[SimpleNamespace, str, bool]:
+        """Config-driven replacement of _parse_and_validate_args from runner.py."""
+        args = self.parse_arguments_from_config()
+        
+        # Configure logging
+        if args.verbose:
+            logging.getLogger().setLevel(logging.DEBUG)
+        
+        # Use provided file paths
+        tasks_file = args.tasks_file
+        
+        # Check if files exist (handle comma-separated files)
+        if tasks_file:
+            if ',' in tasks_file:
+                # Multiple files specified
+                task_files = [f.strip() for f in tasks_file.split(',')]
+                for task_file in task_files:
+                    if not os.path.exists(task_file):
+                        logger.error(f"Tasks file not found: {task_file}")
+                        raise FileNotFoundError(f"Tasks file not found: {task_file}")
+            else:
+                # Single file specified
+                if not os.path.exists(tasks_file):
+                    logger.error(f"Tasks file not found: {tasks_file}")
+                    raise FileNotFoundError(f"Tasks file not found: {tasks_file}")
+        
+        # Determine if distraction is enabled based on count
+        enable_distraction = args.distraction_count > 0
+        
+        return args, tasks_file, enable_distraction
+
     async def run_benchmark(
         self,
-        selected_models: Optional[List[str]] = None,
-        task_limit: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Execute benchmark tasks using the specified model(s).
-        
-        Args:
-            selected_models: Optional list of model names to run. If None, uses config.
-            task_limit: Optional limit on number of tasks. If None, uses config.
-            
-        Returns:
-            Dict containing benchmark results with standardized format:
-            - models: Dict[model_name, results] with task results per model
-            - metadata: Dict with timestamp, config, and aggregate metrics
+        Implementation of the abstract method from BenchmarkAdapter.
         """
-        # Determine which models to run
-        if selected_models is None:
-            selected_models = self.get_selected_models()
-        
-        # Determine task limit
-        if task_limit is None:
-            task_limit = self.task_limit
-        
-        # Initialize benchmark runner
-        # Create a LocalServerConfigLoader with the configured commands.json
-        # path and inject it into the BenchmarkRunner so the loader doesn't
-        # try to open the old hard-coded relative path.
-        local_loader = LocalServerConfigLoader(commands_json_path=self.commands_json_path)
+        # Step 1 - Parse and validate arguments pulled from `config.toml`
+        args, tasks_file, enable_distraction_servers = self.parse_and_validate_args_from_config()
 
-        self._runner = BenchmarkRunner(
-            tasks_file=self.tasks_file,
-            enable_distraction_servers=self.enable_distraction_servers,
-            distraction_count=self.distraction_count,
-            enable_judge_stability=self.enable_judge_stability,
-            filter_problematic_tools=self.filter_problematic_tools,
-            concurrent_summarization=self.concurrent_summarization,
-            use_fuzzy_descriptions=self.use_fuzzy_descriptions,
-            local_config_loader=local_loader,
+        # Step 2 - Create runner and get models
+        self._runner, self._selected_models = _create_runner_and_get_models(
+            args, tasks_file, enable_distraction_servers
         )
-        
-        logger.info(f"Running MCP Bench with models: {selected_models}")
-        logger.info(f"Task limit: {task_limit if task_limit else 'all tasks'}")
-        
-        # Run benchmark
-        results = await self._runner.run_benchmark(
-            selected_models=selected_models,
-            task_limit=task_limit
-        )
-        
-        return results
-    
-    def evaluate_result(
-        self,
-        task: Dict[str, Any],
-        execution_result: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Evaluate whether the task result is correct.
-        
-        Args:
-            task: The task that was executed (with expected outputs/ground truth)
-            execution_result: The raw output from execution
-            
-        Returns:
-            Dict containing:
-            - success: bool indicating overall success
-            - overall_score: float (0.0-1.0) indicating quality
-            - schema_understanding: float score for schema understanding
-            - task_completion: float score for task completion
-            - tool_usage: float score for tool usage
-            - planning_effectiveness: float score for planning
-            - details: Dict with additional evaluation details
-            
-        Raises:
-            ValueError: If task or execution_result is None
-        """
-        if task is None:
-            raise ValueError("task cannot be None")
-        if execution_result is None:
-            raise ValueError("execution_result cannot be None")
-        
-        # Initialize evaluator with config if not already done
-        if self._evaluator is None:
-            # Load judge provider from config if specified
-            judge_config = self.config.get("judge_config", {})
-            self._evaluator = TaskEvaluator(
-                enable_judge_stability=self.enable_judge_stability,
-                judge_config=judge_config
+
+        # Log the models used
+        if args.list_models:
+            print("Available models:")
+            for i, model in enumerate(self._selected_models, 1):
+                print(f"  {i:2d}. {model}")
+            print(f"\nTotal: {len(self._selected_models)} models")
+            print("\nUsage examples:")
+            print(f"  python {sys.argv[0]} --models {self._selected_models[0] if self._selected_models else 'MODEL_NAME'}")
+
+        # Step 3: Determine which models to test
+        selected_models = _determine_selected_models(args, self._selected_models)
+
+        # Step 4: Print configuration
+        _print_configuration(selected_models, self._selected_models, self._runner, args)
+
+        # Step 5: Run benchmark
+        try:
+            logger.info("Starting multi-model benchmark execution...")
+            results = await self._runner.run_benchmark(
+                selected_models=selected_models, 
+                # task_limit=task_limit
             )
-        
-        # Perform evaluation
-        eval_result = self._evaluator.evaluate_task(
-            task=task,
-            execution_result=execution_result
-        )
-        
-        # Standardize the result format
-        standardized_result = {
-            "success": execution_result.get("success", False),
-            "overall_score": eval_result.get("overall_score", 0.0),
-            "schema_understanding": eval_result.get("schema_understanding", 0.0),
-            "task_completion": eval_result.get("task_completion", 0.0),
-            "tool_usage": eval_result.get("tool_usage", 0.0),
-            "planning_effectiveness": eval_result.get("planning_effectiveness", 0.0),
-            "details": eval_result.get("details", {})
-        }
-        
-        return standardized_result
+            
+            # Save results to JSON file
+            if results:
+                output_file = args.output if args.output else f'benchmark_results_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+                try:
+                    with open(output_file, 'w', encoding='utf-8') as f:
+                        json.dump(results, f, indent=2, ensure_ascii=False)
+                    logger.info(f"Results saved to {output_file}")
+                    logger.info("The overall score is calculated as the average of four main dimensions: schema understanding, task completion, tool usage, and planning effectiveness. Within each dimension (e.g., schema understanding), we first compute the mean across its sub-dimensions.")
+                except Exception as save_error:
+                    logger.error(f"Failed to save results to {output_file}: {save_error}")
+                    
+            return results
+    
+        except Exception as e:
+            logger.error(f"ERROR in multi-model benchmark execution: {e}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+            raise
+
+    def evaluate_result(self):
+        return super().evaluate_result()
     
     async def save_results(
         self,
         results: Dict[str, Any],
         filename: Optional[str] = None
     ) -> str:
-        """
-        Save benchmark results to a JSON file.
-        
-        Args:
-            results: Results dictionary to save
-            filename: Optional custom filename. If None, generates timestamped name.
-            
-        Returns:
-            Path to the saved results file
-        """
+        """Save benchmark results to a JSON file."""
         # Create output directory if it doesn't exist
-        output_dir = Path(self.save_directory)
+        output_dir = Path(self.cfg.get("results_dir", "results/mcpbench"))
         output_dir.mkdir(parents=True, exist_ok=True)
         
         # Generate filename if not provided
