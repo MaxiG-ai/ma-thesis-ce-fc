@@ -46,7 +46,7 @@ def load_config(config_path: str) -> dict:
 
 def validate_config(config: dict) -> None:
     """Validate that the configuration has required fields for multi-component evaluation."""
-    required_fields = ["model_names", "memory_methods", "benchmarks"]
+    required_fields = ["memory_methods", "benchmarks"]
     missing_fields = [field for field in required_fields if field not in config]
     
     if missing_fields:
@@ -121,12 +121,12 @@ async def main():
         validate_config(config)
         
         # Display configuration summary
-        logger.info(f"Models: {config['model_names']}")
+        # logger.info(f"Models: {config['model_names']}")
         logger.info(f"Memory methods: {config['memory_methods']}")
         logger.info(f"Benchmarks: {config['benchmarks']}")
         
         total_combinations = (
-            len(config['model_names']) * 
+            # len(config['model_names']) * 
             len(config['memory_methods']) * 
             len(config['benchmarks'])
         )

@@ -35,6 +35,12 @@ class EvaluationOrchestrator:
         self.results_storage = ResultsStorage(results_dir)
         self.registry = ComponentRegistry()
         
+        # Update model registry with configuration
+        providers_config = self.config.get("providers", {})
+        if providers_config:
+            from models.registry import ModelRegistry
+            ModelRegistry.update_provider_catalog(providers_config)
+        
         # Extract component lists from config
         self.model_specs = self._parse_model_specs()
         self.memory_methods = self.config.get("memory_methods", ["truncation"])

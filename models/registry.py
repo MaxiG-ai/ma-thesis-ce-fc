@@ -1,4 +1,4 @@
-from typing import Dict, Type, List, Any
+from typing import Dict, Type, List, Any, Optional
 import logging
 from .BaseModel import BaseModel
 from .providers.ollama import OllamaModel
@@ -14,20 +14,8 @@ class ModelRegistry:
         "openrouter": OpenRouterModel,
     }
     
-    # Model catalog for validation (optional but recommended)
-    _provider_model_catalog = {
-        "ollama": [
-            "llama3.2:3b", "llama3.1:8b", "llama3.1:70b",
-            "gemma3:270m", "mistral:7b", "qwen2.5:7b"
-        ],
-        "openrouter": [
-            "gpt-4", "gpt-4-turbo", "gpt-3.5-turbo", 
-            "claude-3-sonnet", "claude-3-haiku"
-        ],
-        "anthropic": [
-            "claude-3-sonnet-20240229", "claude-3-haiku-20240307"
-        ]
-    }
+    # Dynamic model catalog loaded from configuration
+    _provider_model_catalog: Dict[str, List[str]] = {}
     
     @classmethod
     def create_model(cls, provider: str, model_name: str, **kwargs) -> BaseModel:
@@ -36,12 +24,11 @@ class ModelRegistry:
             available = list(cls._providers.keys())
             raise ValueError(f"Provider '{provider}' is not registered. Available: {available}")
         
-        # Optional: Validate model is known (can be disabled for flexibility)
-        if provider in cls._provider_model_catalog:
-            known_models = cls._provider_model_catalog[provider]
-            if model_name not in known_models:
-                logger.warning(f"Model '{model_name}' not in catalog for provider '{provider}'. "
-                             f"Known models: {known_models}")
+        # Validate model is known using dynamic catalog
+        known_models = cls._get_provider_models_for_validation(provider)
+        if known_models and model_name not in known_models:
+            logger.warning(f"Model '{model_name}' not in catalog for provider '{provider}'. "
+                         f"Known models: {known_models}")
         
         return cls._providers[provider](model_name=model_name, **kwargs)
     
@@ -67,7 +54,29 @@ class ModelRegistry:
         return cls._provider_model_catalog.copy()
     
     @classmethod
-    def validate_provider_config(cls, provider_config: Dict[str, any]) -> None:
+    def _get_provider_models_for_validation(cls, provider: str) -> List[str]:
+        """Get provider models for validation purposes."""
+        return cls._provider_model_catalog.get(provider, [])
+    
+    @classmethod
+    def update_provider_catalog(cls, providers_config: Dict[str, Dict[str, Any]]) -> None:
+        """Update the model catalog from provider configuration."""
+        logger.info("Updating model catalog from configuration...")
+        
+        for provider_name, provider_config in providers_config.items():
+            if not isinstance(provider_config, dict):
+                continue
+            
+            # Extract models from provider config
+            models = provider_config.get("models", [])
+            if models:
+                cls._provider_model_catalog[provider_name] = models
+                logger.info(f"Updated catalog for provider '{provider_name}': {len(models)} models")
+        
+        logger.info(f"Model catalog updated for {len(cls._provider_model_catalog)} providers")
+    
+    @classmethod
+    def validate_provider_config(cls, provider_config: Dict[str, Any]) -> None:
         """Validate provider configuration structure."""
         for provider_name, config in provider_config.items():
             if provider_name not in cls._providers:

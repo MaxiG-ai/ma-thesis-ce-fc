@@ -1,4 +1,4 @@
-"""Configuration utilities for provider-specific model management."""
+:"""Configuration utilities for provider-specific model management."""
 
 from typing import Dict, List, Any
 import logging
