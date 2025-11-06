@@ -71,6 +71,66 @@ components = registry.get_available_components()
 # Returns: {"models": [...], "memory_methods": [...], "benchmarks": [...]}
 ```
 
+#### 1.1. Provider-Specific Model Configuration
+
+**Location**: `evaluation/config.toml`, `evaluation/orchestrator.py`  
+**Purpose**: Explicit, organized model management with easy enable/disable functionality
+
+**Configuration Structure**:
+```toml
+[providers.{provider_name}]
+models = [...]           # All available models for this provider
+enabled_models = [...]   # Subset of models to actually use
+# ... provider-specific settings (temperature, max_tokens, etc.)
+```
+
+**Key Benefits**:
+1. **Clear Organization**: Models grouped by their API provider
+2. **Easy Selection**: Simple enable/disable per provider section  
+3. **Provider Isolation**: Each provider's models and settings are contained
+4. **Validation**: Enabled models must be in the available models list
+5. **Extensibility**: Adding new providers requires only new configuration section
+
+**Example Configuration**:
+```toml
+[providers.ollama]
+models = ["llama3.2:3b", "llama3.1:8b", "mistral:7b"]
+enabled_models = ["llama3.2:3b"]  # Only this model will be used
+temperature = 0.3
+max_tokens = 1000
+
+[providers.openrouter]
+models = ["gpt-4", "gpt-4-turbo", "claude-3-sonnet"]
+enabled_models = ["gpt-4", "claude-3-sonnet"]  # Both models will be used
+temperature = 0.5
+max_tokens = 1500
+
+[providers.anthropic]
+models = ["claude-3-sonnet-20240229", "claude-3-haiku-20240307"]
+enabled_models = []  # No models enabled by default
+temperature = 0.3
+max_tokens = 1000
+```
+
+**Runtime Behavior**:
+1. **Model Discovery**: System reads `enabled_models` from each provider section
+2. **Validation**: Ensures all enabled models exist in the provider's `models` list
+3. **Instance Creation**: Creates model instances with provider-specific configuration
+4. **Execution**: Runs evaluations across all enabled models from all providers
+
+**Adding New Models**:
+To add a new model:
+1. Add to appropriate provider's `models` list
+2. Add to `enabled_models` if you want to use it immediately
+3. No code changes required
+
+**Disabling Models**:
+To temporarily disable a model:
+1. Remove from `enabled_models` list (keep in `models` list for future use)
+2. Restart evaluation - model will be skipped
+
+This approach eliminates complex provider inference logic and provides explicit, readable configuration management.
+
 #### 2. Specialized Registries
 
 ##### ModelRegistry
@@ -170,7 +230,7 @@ model_names = ["new_provider:model_name"]
 #### Adding New Memory Methods
 ```python
 # 1. Implement method in memory/methods/
-class SlidingWindowMemory(BaseMemoryMethod):
+class SlidingWindowMemory(BaseMemory):
     def process(self, text: str) -> str:
         # Implementation
         pass
@@ -610,216 +670,6 @@ class NestfulAdapter(TaskAdapter):
 - Output parsing logic (from `output_parsers.py`)
 - Scoring logic (from `scorer.py`)
 - LLM integration (compatible with both datasets)
-
----
-
-### 4. Task Orchestration Layer
-
-**Purpose**: Coordinate task execution, filtering, and result persistence.
-
-#### 4.1 TaskFilter
-
-Enables dynamic composition of task groups at runtime.
-
-```python
-class TaskFilter:
-    """
-    Builds and applies filters to task collections.
-    
-    Supports:
-    - Filtering by dataset
-    - Filtering by metadata fields
-    - Combining multiple filters (AND logic)
-    - Limiting result count
-    """
-    
-    def __init__(self, tasks: List[UnifiedTask]):
-        """Initialize with task list."""
-        self.tasks = tasks
-        self.predicates = []
-    
-    def by_dataset(self, source: str) -> 'TaskFilter':
-        """Filter tasks from specific dataset."""
-        pass
-    
-    def by_metadata(self, key: str, value: Any) -> 'TaskFilter':
-        """Filter by metadata field equality."""
-        pass
-    
-    def by_metadata_in(self, key: str, values: List[Any]) -> 'TaskFilter':
-        """Filter by metadata field membership."""
-        pass
-    
-    def limit(self, n: int) -> 'TaskFilter':
-        """Keep only first n tasks."""
-        pass
-    
-    def apply(self) -> List[UnifiedTask]:
-        """Apply all filters and return result."""
-        pass
-```
-
-**Usage Example**:
-```python
-filtered = TaskFilter(all_tasks) \
-    .by_dataset("mcp-bench") \
-    .by_metadata_in("servers", ["weather", "time"]) \
-    .limit(10) \
-    .apply()
-```
-
-#### 4.2 ResultWriter
-
-Writes execution results to SQLite immediately after each task completes.
-
-```python
-class ResultWriter:
-    """
-    Persists execution results to SQLite database.
-    
-    Responsibilities:
-    - Create database schema on first run
-    - Write task metadata (if not exists)
-    - Write execution results immediately after completion
-    - Handle concurrent writes safely
-    """
-    
-    def __init__(self, db_path: str):
-        """Initialize database connection."""
-        self.db_path = db_path
-        self._ensure_schema()
-    
-    def _ensure_schema(self):
-        """Create tables if they don't exist."""
-        pass
-    
-    def write_task(self, task: UnifiedTask):
-        """Write task metadata to database."""
-        pass
-    
-    def write_execution(self, evaluation: TaskEvaluation):
-        """Write execution result immediately."""
-        pass
-    
-    def write_batch(self, evaluations: List[TaskEvaluation]):
-        """Write multiple results (optional batch mode)."""
-        pass
-```
-
-**Database Schema**:
-```sql
--- Task catalog (immutable after first insertion)
-CREATE TABLE tasks (
-    id TEXT PRIMARY KEY,
-    source TEXT NOT NULL,
-    description TEXT,
-    metadata JSON,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Execution results (one row per task execution)
-CREATE TABLE executions (
-    id TEXT PRIMARY KEY,
-    task_id TEXT NOT NULL,
-    model TEXT NOT NULL,
-    success BOOLEAN NOT NULL,
-    token_usage INTEGER,
-    time_taken REAL,
-    output JSON,
-    error TEXT,
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(task_id) REFERENCES tasks(id)
-);
-
--- Index for common queries
-CREATE INDEX idx_executions_task_model ON executions(task_id, model);
-CREATE INDEX idx_executions_timestamp ON executions(timestamp);
-```
-
-**Design Rationale**: Write after each task to prevent data loss if execution crashes.
-
-#### 4.3 TaskExecutor
-
-Orchestrates sequential execution of tasks.
-
-```python
-class TaskExecutor:
-    """
-    Executes tasks sequentially, evaluates results, and persists to database.
-    
-    Ensures:
-    - Sequential execution (no parallelization)
-    - Consistent error handling
-    - Metrics tracking
-    - Immediate result persistence
-    """
-    
-    def __init__(
-        self,
-        adapters: Dict[str, TaskAdapter],
-        result_writer: ResultWriter,
-        config: Config
-    ):
-        """
-        Initialize executor.
-        
-        Args:
-            adapters: Dict mapping dataset source to adapter instance
-            result_writer: Database writer
-            config: Execution configuration
-        """
-        self.adapters = adapters
-        self.result_writer = result_writer
-        self.config = config
-    
-    def execute(
-        self,
-        tasks: List[UnifiedTask],
-        model: str
-    ) -> ExecutionReport:
-        """
-        Execute all tasks sequentially.
-        
-        Args:
-            tasks: List of UnifiedTask to execute
-            model: Model to use for execution
-        
-        Returns:
-            ExecutionReport with summary statistics
-        
-        Flow:
-        1. For each task:
-           a. Get appropriate adapter by task.source
-           b. Create ExecutionContext
-           c. Call adapter.execute_task()
-           d. Call adapter.evaluate_result()
-           e. Construct TaskEvaluation
-           f. Call result_writer.write_execution()
-           g. Log metrics
-           h. Continue to next task (no stopping on error)
-        2. Return summary report
-        """
-        pass
-```
-
-**ExecutionReport**:
-```python
-@dataclass
-class ExecutionReport:
-    """Summary of execution run."""
-    total_tasks: int
-    successful_tasks: int
-    failed_tasks: int
-    total_tokens: int
-    total_time: float
-    start_timestamp: datetime
-    end_timestamp: datetime
-    errors: List[str]
-    
-    def success_rate(self) -> float:
-        """Calculate success percentage."""
-        pass
-```
 
 ---
 

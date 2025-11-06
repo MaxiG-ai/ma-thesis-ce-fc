@@ -1,5 +1,5 @@
 """
-Tests for the BaseMemoryMethod abstract base class.
+Tests for the BaseMemory abstract base class.
 """
 
 import pytest
@@ -16,32 +16,32 @@ sys.path.insert(0, str(project_root))
 
 
 def test_base_memory_method_is_abstract():
-    """Test that BaseMemoryMethod cannot be instantiated directly."""
-    from memory.base import BaseMemoryMethod
+    """Test that BaseMemory cannot be instantiated directly."""
+    from memory.BaseMemory import BaseMemory
     
     with pytest.raises(TypeError, match="Can't instantiate abstract class"):
-        BaseMemoryMethod()
+        BaseMemory()
 
 
 def test_base_memory_method_has_required_methods():
-    """Test that BaseMemoryMethod defines the required abstract methods."""
-    from memory.base import BaseMemoryMethod
+    """Test that BaseMemory defines the required abstract methods."""
+    from memory.BaseMemory import BaseMemory
     
     # Check that the abstract methods exist
-    assert hasattr(BaseMemoryMethod, 'process')
-    assert hasattr(BaseMemoryMethod, 'get_method_info')
+    assert hasattr(BaseMemory, 'process')
+    assert hasattr(BaseMemory, 'get_method_info')
     
     # Check they are abstract
-    assert BaseMemoryMethod.process.__isabstractmethod__
-    assert BaseMemoryMethod.get_method_info.__isabstractmethod__
+    assert BaseMemory.process.__isabstractmethod__
+    assert BaseMemory.get_method_info.__isabstractmethod__
 
 
 def test_concrete_implementation_must_implement_abstract_methods():
     """Test that concrete implementations must implement all abstract methods."""
-    from memory.base import BaseMemoryMethod
+    from memory.BaseMemory import BaseMemory
     
     # Incomplete implementation - missing get_method_info
-    class IncompleteMemoryMethod(BaseMemoryMethod):
+    class IncompleteMemoryMethod(BaseMemory):
         def process(self, text: str, **kwargs) -> str:
             return text
     
@@ -51,9 +51,9 @@ def test_concrete_implementation_must_implement_abstract_methods():
 
 def test_concrete_implementation_can_be_instantiated():
     """Test that a complete concrete implementation can be instantiated."""
-    from memory.base import BaseMemoryMethod
+    from memory.BaseMemory import BaseMemory
     
-    class CompleteMemoryMethod(BaseMemoryMethod):
+    class CompleteMemoryMethod(BaseMemory):
         def __init__(self, **kwargs):
             self.config = kwargs
         
@@ -71,9 +71,9 @@ def test_concrete_implementation_can_be_instantiated():
 
 def test_concrete_implementation_method_signatures():
     """Test that concrete implementations work with expected method signatures."""
-    from memory.base import BaseMemoryMethod
+    from memory.BaseMemory import BaseMemory
     
-    class TestMemoryMethod(BaseMemoryMethod):
+    class TestMemoryMethod(BaseMemory):
         def process(self, text: str, **kwargs) -> str:
             max_length = kwargs.get('max_length', 100)
             return text[:max_length]
@@ -95,12 +95,12 @@ def test_concrete_implementation_method_signatures():
 
 def test_base_memory_method_inheritance():
     """Test the inheritance structure."""
-    from memory.base import BaseMemoryMethod
+    from memory.BaseMemory import BaseMemory
     
     # Should inherit from ABC
-    assert issubclass(BaseMemoryMethod, ABC)
+    assert issubclass(BaseMemory, ABC)
     
-    class ConcreteMethod(BaseMemoryMethod):
+    class ConcreteMethod(BaseMemory):
         def process(self, text: str, **kwargs) -> str:
             return text
         
@@ -108,5 +108,5 @@ def test_base_memory_method_inheritance():
             return {}
     
     method = ConcreteMethod()
-    assert isinstance(method, BaseMemoryMethod)
+    assert isinstance(method, BaseMemory)
     assert isinstance(method, ABC)

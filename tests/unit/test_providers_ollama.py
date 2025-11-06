@@ -9,7 +9,7 @@ def test_instantiate_ollama_model():
 
 def test_inherits_from_base_model():
     """Test that OllamaModel is a BaseModel instance."""
-    from models.base import BaseModel
+    from models.BaseModel import BaseModel
     
     model = OllamaModel(model_name="gemma3")
     assert isinstance(model, BaseModel)
@@ -45,6 +45,7 @@ async def test_unsupported_model_raises_error():
 async def test_generation_output_matches_expected():
     """Test that generation output matches expected structure for a known model."""
     supported_models = [model.model for model in ollama.list().models]
+    assert len(supported_models) > 0, "No supported models found in Ollama."
     model = OllamaModel(model_name=supported_models[0])
 
     prompt = "Hello, how are you?"

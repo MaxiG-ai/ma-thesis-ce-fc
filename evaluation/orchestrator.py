@@ -43,36 +43,64 @@ class EvaluationOrchestrator:
         # Configuration options
         self.concurrent_evaluations = self.config.get("concurrent_evaluations", 1)
         
-        logger.info(f"Initialized orchestrator with {len(self.model_specs)} models, "
-                   f"{len(self.memory_methods)} memory methods, {len(self.benchmarks)} benchmarks")
+        # Log configuration summary
+        providers_summary = {}
+        for model_spec in self.model_specs:
+            provider = model_spec["provider"]
+            providers_summary[provider] = providers_summary.get(provider, 0) + 1
+        
+        logger.info(f"Initialized orchestrator:")
+        logger.info(f"  Models: {len(self.model_specs)} total")
+        for provider, count in providers_summary.items():
+            logger.info(f"    {provider}: {count} models")
+        logger.info(f"  Memory methods: {len(self.memory_methods)}")
+        logger.info(f"  Benchmarks: {len(self.benchmarks)}")
     
     def _parse_model_specs(self) -> List[Dict[str, Any]]:
-        """Parse model specifications from config."""
-        model_names = self.config.get("model_names", [])
+        """Parse model specifications from provider-specific configuration."""
         models = []
         
-        for model_name in model_names:
-            provider = self._determine_provider(model_name)
-            models.append({
-                "name": model_name,
-                "provider": provider,
-                "config": self.config.get(f"{provider}_config", {})
-            })
+        # Get providers configuration
+        providers_config = self.config.get("providers", {})
         
+        if not providers_config:
+            raise ValueError("No providers configured. Please add [providers.{name}] sections to config.")
+        
+        for provider_name, provider_config in providers_config.items():
+            # Validate provider structure
+            if not isinstance(provider_config, dict):
+                continue
+                
+            available_models = provider_config.get("models", [])
+            enabled_models = provider_config.get("enabled_models", [])
+            
+            # Validate enabled models are in available models
+            invalid_models = set(enabled_models) - set(available_models)
+            if invalid_models:
+                raise ValueError(
+                    f"Provider '{provider_name}' has invalid enabled models: {invalid_models}. "
+                    f"Available models: {available_models}"
+                )
+            
+            # Create model specs for enabled models
+            for model_name in enabled_models:
+                # Extract provider config (exclude model lists)
+                provider_settings = {
+                    k: v for k, v in provider_config.items() 
+                    if k not in ["models", "enabled_models"]
+                }
+                
+                models.append({
+                    "name": model_name,
+                    "provider": provider_name,
+                    "config": provider_settings
+                })
+        
+        if not models:
+            raise ValueError("No models enabled. Please set enabled_models for at least one provider.")
+        
+        logger.info(f"Loaded {len(models)} enabled models across {len(providers_config)} providers")
         return models
-    
-    def _determine_provider(self, model_name: str) -> str:
-        """Determine provider based on model name or config."""
-        # Check if explicitly configured
-        for section_name, section_config in self.config.items():
-            if isinstance(section_config, dict) and "provider" in section_config:
-                return section_config["provider"]
-        
-        # Fallback logic based on model name patterns
-        if any(name in model_name.lower() for name in ["llama", "granite", "deepseek"]):
-            return "ollama"
-        
-        return "ollama"  # Default
     
     def _generate_combinations(self) -> Iterator[Tuple[Dict[str, Any], str, str]]:
         """Generate all combinations of models × memory methods × benchmarks."""

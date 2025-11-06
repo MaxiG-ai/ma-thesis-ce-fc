@@ -5,7 +5,6 @@
 # - Multiple benchmarks
 
 # Global Settings
-model_names = ["llama3.2:3b"] # , "llama3.1:8b"
 memory_methods = ["truncation"]
 benchmarks = ["nestful"] #, "mcpbench"
 
@@ -13,12 +12,22 @@ benchmarks = ["nestful"] #, "mcpbench"
 results_dir = "results"
 concurrent_evaluations = 1  # Number of parallel evaluations
 
-# Provider Configurations
-[ollama_config]
+# Provider-specific configurations
+[providers.ollama]
+models = ["gemma3:270m", "llama3.2:3b", "llama3.1:8b", "mistral:7b"]
+enabled_models = ["gemma3:270m", "llama3.2:3b"]
 temperature = 0.3
 max_tokens = 1000
 
-[openrouter_config] 
+[providers.openrouter]
+models = ["gpt-4", "gpt-4-turbo", "gpt-3.5-turbo", "claude-3-sonnet"]
+enabled_models = []  # None enabled by default
+temperature = 0.3
+max_tokens = 1000
+
+[providers.anthropic]
+models = ["claude-3-sonnet-20240229", "claude-3-haiku-20240307"]
+enabled_models = []  # None enabled by default
 temperature = 0.3
 max_tokens = 1000
 

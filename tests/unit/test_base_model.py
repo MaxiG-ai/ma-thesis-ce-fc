@@ -1,6 +1,6 @@
 # tests/unit/test_base_model.py
 import pytest
-from models.base import BaseModel
+from models.BaseModel import BaseModel
 
 
 class MockModel(BaseModel):

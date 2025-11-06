@@ -10,10 +10,10 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from memory.base import BaseMemoryMethod
+from memory.BaseMemory import BaseMemory
 
 
-class TruncationMemory(BaseMemoryMethod):
+class TruncationMemory(BaseMemory):
     """Memory method that truncates text to fit within token limits."""
     
     def __init__(self, max_tokens: int = 500, **kwargs):
@@ -69,19 +69,3 @@ class TruncationMemory(BaseMemoryMethod):
             "default_max_tokens": self.max_tokens,
             "config": self.config
         }
-
-
-# Backward compatibility function
-def truncate_memory(text: str, max_tokens: int) -> str:
-    """
-    Legacy function interface for backward compatibility.
-    
-    Args:
-        text: The input text to be truncated
-        max_tokens: The maximum number of tokens allowed
-        
-    Returns:
-        The truncated text
-    """
-    method = TruncationMemory(max_tokens=max_tokens)
-    return method.process(text)

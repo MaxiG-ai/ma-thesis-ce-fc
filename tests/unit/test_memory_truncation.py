@@ -101,12 +101,12 @@ def test_truncation_memory_get_method_info():
 
 
 def test_truncation_memory_inheritance():
-    """Test that TruncationMemory inherits from BaseMemoryMethod."""
+    """Test that TruncationMemory inherits from BaseMemory."""
     from memory.methods.truncation_memory import TruncationMemory
-    from memory.base import BaseMemoryMethod
+    from memory.BaseMemory import BaseMemory
     
     memory = TruncationMemory(max_tokens=10)
-    assert isinstance(memory, BaseMemoryMethod)
+    assert isinstance(memory, BaseMemory)
 
 
 def test_truncation_memory_initialization():

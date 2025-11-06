@@ -10,19 +10,19 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from memory.base import BaseMemoryMethod
+from memory.BaseMemory import BaseMemory
 from memory.methods.truncation_memory import TruncationMemory
 
 
 class MemoryRegistry:
     """Central registry for memory method discovery and creation."""
     
-    _methods: Dict[str, Type[BaseMemoryMethod]] = {
+    _methods: Dict[str, Type[BaseMemory]] = {
         "truncation": TruncationMemory,
     }
     
     @classmethod
-    def create_method(cls, method_name: str, **kwargs) -> BaseMemoryMethod:
+    def create_method(cls, method_name: str, **kwargs) -> BaseMemory:
         """
         Factory method to create memory method instances.
         
@@ -42,13 +42,13 @@ class MemoryRegistry:
         return cls._methods[method_name](**kwargs)
     
     @classmethod
-    def register_method(cls, name: str, method_cls: Type[BaseMemoryMethod]) -> None:
+    def register_method(cls, name: str, method_cls: Type[BaseMemory]) -> None:
         """
         Register a new memory method.
         
         Args:
             name: Name to register the method under
-            method_cls: Memory method class that inherits from BaseMemoryMethod
+            method_cls: Memory method class that inherits from BaseMemory
         """
         cls._methods[name] = method_cls
     

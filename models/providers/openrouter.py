@@ -1,6 +1,11 @@
-import openrouter
-from typing import Dict, Any
-from ..base import BaseModel
+import openai
+from typing import Dict, Any, cast
+from ..BaseModel import BaseModel
+
+import os 
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class OpenRouterModel(BaseModel): #TODO: Properly implement OpenRouterModel class
     """Provides a connector to local OpenRouter"""
@@ -31,7 +36,35 @@ class OpenRouterModel(BaseModel): #TODO: Properly implement OpenRouterModel clas
         }
 
     async def generate_text(self, prompt, system=None, **kwargs) -> Dict[str, Any]:
-        return dict()
+
+        client = self._generate_client()
+
+        if system:
+            messages = [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ]
+        else:
+            messages = [
+                {"role": "user", "content": prompt}
+            ]
+
+        # Cast messages to Any to satisfy the typed signature of the client API
+        completion = client.chat.completions.create(
+            model=self.model_name,
+            messages=cast(Any, messages)
+        )
+
+        return self.chatresponse_to_dict(completion)
+
+    def _generate_client(self):
+
+        client = openai.OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=os.getenv("OPENROUTER_API_KEY"),
+        )
+    
+        return client
         
     def get_model_info(self):
         return {'model': self.model_name, 'provider' : 'openrouter'}

@@ -1,5 +1,5 @@
 import ollama
-from ..base import BaseModel
+from ..BaseModel import BaseModel
 
 class OllamaModel(BaseModel):
     """Provides a connector to local Ollama"""

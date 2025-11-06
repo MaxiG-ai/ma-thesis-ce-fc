@@ -23,12 +23,12 @@ def test_memory_registry_has_default_providers():
 def test_memory_registry_create_method():
     """Test creating memory method instances."""
     from memory.registry import MemoryRegistry
-    from memory.base import BaseMemoryMethod
+    from memory.BaseMemory import BaseMemory
     
     # Create truncation method
     method = MemoryRegistry.create_method("truncation", max_tokens=50)
     
-    assert isinstance(method, BaseMemoryMethod)
+    assert isinstance(method, BaseMemory)
     assert method.max_tokens == 50
 
 
@@ -58,10 +58,10 @@ def test_memory_registry_unknown_method():
 def test_memory_registry_register_new_method():
     """Test registering a new memory method."""
     from memory.registry import MemoryRegistry
-    from memory.base import BaseMemoryMethod
+    from memory.BaseMemory import BaseMemory
     
     # Create a custom memory method
-    class CustomMemoryMethod(BaseMemoryMethod):
+    class CustomMemoryMethod(BaseMemory):
         def __init__(self, **kwargs):
             self.config = kwargs
         
@@ -80,7 +80,7 @@ def test_memory_registry_register_new_method():
     
     # Should be able to create instance
     method = MemoryRegistry.create_method("custom", param="value")
-    assert isinstance(method, BaseMemoryMethod)
+    assert isinstance(method, BaseMemory)
     assert method.config.get("param") == "value"
     
     # Test processing

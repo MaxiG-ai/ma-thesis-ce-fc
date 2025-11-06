@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict
 
 
-class BaseMemoryMethod(ABC):
+class BaseMemory(ABC):
     """Abstract base class for all memory management methods."""
     
     @abstractmethod
