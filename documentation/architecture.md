@@ -1,6 +1,6 @@
 ## Registry & Orchestrator Architecture Summary
 
-The current evaluation system implements a comprehensive multi-component architecture that enables systematic evaluation across models, memory methods, and benchmarks. This section provides an overview of the registry pattern and orchestration components implemented in the codebase.
+The current evaluation system implements a multi-component architecture that enables systematic evaluation across models, memory methods, and benchmarks. This section provides an overview of the registry pattern and orchestration components implemented in the codebase.
 
 ### Core Architecture Overview
 
@@ -12,8 +12,8 @@ The current evaluation system implements a comprehensive multi-component archite
 ┌─────────────────────────▼───────────────────────────────────────────┐
 │                   EvaluationOrchestrator                             │
 │  • Coordinates model × memory × benchmark combinations               │
-│  • Manages concurrent/sequential execution                          │
-│  • Handles result aggregation and reporting                         │
+│  • Manages sequential/concurrent execution with semaphore            │
+│  • Handles result aggregation and error recovery                     │
 └─────────────────────────┬───────────────────────────────────────────┘
                           │
 ┌─────────────────────────▼───────────────────────────────────────────┐
@@ -29,8 +29,8 @@ The current evaluation system implements a comprehensive multi-component archite
 │  │  ModelRegistry  │ │ MemoryRegistry  │ │BenchmarkRegistry│       │
 │  │ ─────────────── │ │ ─────────────── │ │ ─────────────── │       │
 │  │ • Ollama        │ │ • Truncation    │ │ • Nestful       │       │
-│  │ • OpenRouter    │ │ • [Future]      │ │ • MCPBench      │       │
-│  │ • [Future]      │ │                 │ │ • [Future]      │       │
+│  │ • OpenRouter    │ │                 │ │ • MCPBench      │       │
+│  │ • [Anthropic]*  │ │                 │ │                 │       │
 │  └─────────────────┘ └─────────────────┘ └─────────────────┘       │
 └─────────────────────────┬───────────────────────────────────────────┘
                           │
@@ -42,6 +42,8 @@ The current evaluation system implements a comprehensive multi-component archite
 │  • Query interface for analysis                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+*Note: Anthropic provider is configured in model registry but not yet implemented
 
 ### Component Details
 
@@ -64,7 +66,7 @@ registry = ComponentRegistry()
 # Create components
 model = registry.create_model("ollama", "llama3.2:3b")
 memory = registry.create_memory_method("truncation", max_tokens=500)
-benchmark = registry.create_benchmark("nestful", dataset_path="...")
+benchmark = registry.create_benchmark("nestful", **kwargs)
 
 # Discover available components
 components = registry.get_available_components()
@@ -94,19 +96,13 @@ enabled_models = [...]   # Subset of models to actually use
 **Example Configuration**:
 ```toml
 [providers.ollama]
-models = ["llama3.2:3b", "llama3.1:8b", "mistral:7b"]
-enabled_models = ["llama3.2:3b"]  # Only this model will be used
+models = ["gemma3:270m", "llama3.2:3b", "llama3.1:8b", "mistral:7b"]
+enabled_models = ["gemma3:270m", "llama3.2:3b"]
 temperature = 0.3
 max_tokens = 1000
 
 [providers.openrouter]
-models = ["gpt-4", "gpt-4-turbo", "claude-3-sonnet"]
-enabled_models = ["gpt-4", "claude-3-sonnet"]  # Both models will be used
-temperature = 0.5
-max_tokens = 1500
-
-[providers.anthropic]
-models = ["claude-3-sonnet-20240229", "claude-3-haiku-20240307"]
+models = ["gpt-4", "gpt-4-turbo", "gpt-3.5-turbo", "claude-3-sonnet"]
 enabled_models = []  # No models enabled by default
 temperature = 0.3
 max_tokens = 1000
@@ -118,35 +114,36 @@ max_tokens = 1000
 3. **Instance Creation**: Creates model instances with provider-specific configuration
 4. **Execution**: Runs evaluations across all enabled models from all providers
 
-**Adding New Models**:
-To add a new model:
-1. Add to appropriate provider's `models` list
-2. Add to `enabled_models` if you want to use it immediately
-3. No code changes required
-
-**Disabling Models**:
-To temporarily disable a model:
-1. Remove from `enabled_models` list (keep in `models` list for future use)
-2. Restart evaluation - model will be skipped
-
-This approach eliminates complex provider inference logic and provides explicit, readable configuration management.
-
 #### 2. Specialized Registries
 
 ##### ModelRegistry
 **Location**: `models/registry.py`  
 **Purpose**: Manage LLM providers and model instances  
-**Registered Components**: Ollama, OpenRouter (extensible for other providers)
+**Implemented Providers**: Ollama, OpenRouter  
+**Configured Providers**: Anthropic (not yet implemented)
+
+**Key Features**:
+- Provider registration with validation
+- Model catalog for known models per provider
+- Factory method with optional model validation
+- Warning system for unknown models
 
 ##### MemoryRegistry  
 **Location**: `memory/registry.py`  
 **Purpose**: Manage memory constraint methods  
-**Registered Components**: TruncationMemory (extensible for sliding window, attention-based, etc.)
+**Implemented Methods**: TruncationMemory  
+
+**Key Features**:
+- Method registration and factory creation
+- Metadata extraction from method instances
+- Comprehensive method information API
 
 ##### BenchmarkRegistry
 **Location**: `evaluation/registries.py`  
 **Purpose**: Manage benchmark adapters  
-**Registered Components**: Nestful, MCPBench adapters (extensible for new benchmarks)
+**Implementation**: Basic registry structure (adapters exist but not registered)
+
+**Current Status**: Registry structure exists but benchmark adapters (Nestful, MCPBench) are not yet registered in the system.
 
 #### 3. EvaluationOrchestrator
 
@@ -154,29 +151,32 @@ This approach eliminates complex provider inference logic and provides explicit,
 **Purpose**: Coordinate multi-component evaluation execution
 
 **Key Responsibilities**:
+- **Provider-based Model Discovery**: Parses provider configuration to create model specifications
 - **Combination Generation**: Creates all model × memory × benchmark combinations
-- **Execution Management**: Sequential or concurrent execution with configurable limits
+- **Execution Management**: Sequential or concurrent execution with asyncio semaphore
 - **Component Integration**: Uses ComponentRegistry to instantiate components
 - **Result Aggregation**: Collects and summarizes evaluation results
 - **Error Handling**: Graceful failure handling with detailed error reporting
+- **Immediate Persistence**: Saves results after each evaluation
 
 **Configuration-Driven**:
 ```toml
 # evaluation/config.toml
-model_names = ["llama3.2:3b", "llama3.1:8b"]
 memory_methods = ["truncation"]
-benchmarks = ["nestful", "mcpbench"]
+benchmarks = ["nestful"]
 concurrent_evaluations = 1
 ```
 
 **Execution Flow**:
-1. Parse configuration to extract component specifications
+1. Parse provider configuration to extract enabled model specifications
 2. Generate all combinations (models × memory methods × benchmarks)
 3. For each combination:
    - Create component instances via ComponentRegistry
-   - Execute evaluation with proper context
+   - Execute evaluation (currently simulated)
    - Store results immediately via ResultsStorage
 4. Return comprehensive summary with success metrics
+
+**Current Limitation**: Benchmark execution is currently simulated rather than using real benchmark adapters.
 
 #### 4. ResultsStorage (SQLite Persistence)
 
@@ -199,16 +199,51 @@ CREATE TABLE evaluation_runs (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
--- Indexes for efficient querying
-CREATE INDEX idx_model_method_benchmark ON evaluation_runs(model_name, memory_method, benchmark);
-CREATE INDEX idx_timestamp ON evaluation_runs(timestamp);
+-- Additional table for detailed results (unused)
+CREATE TABLE evaluation_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT,
+    FOREIGN KEY (run_id) REFERENCES evaluation_runs (id)
+);
 ```
 
 **Key Features**:
 - **Immediate Persistence**: Results written after each evaluation (crash-resistant)
 - **JSON Export**: `export_to_json()` for interoperability with analysis tools
 - **Query Interface**: `query_results()` with flexible filtering
-- **Metadata Storage**: Comprehensive result metadata for analysis
+- **Summary Statistics**: Comprehensive result metadata for analysis
+- **Indexed Queries**: Optimized for common query patterns
+
+### Benchmark Adapters (Partially Implemented)
+
+#### BenchmarkAdapter (Abstract Base)
+**Location**: `evaluation/BenchmarkAdapter.py`  
+**Purpose**: Define common interface for benchmark implementations
+
+**Key Features**:
+- TOML configuration loading from specific sections
+- Abstract methods for `run_benchmark()` and `evaluate_result()`
+- Automatic configuration validation
+
+#### NestfulAdapter (Implemented)
+**Location**: `evaluation/nestful/nestful_adapter.py`  
+**Purpose**: Execute function composition tasks from Nestful dataset
+
+**Key Features**:
+- Supports multiple model types (Granite, Llama, DeepSeek)
+- In-context learning with configurable examples
+- Batch processing with progress tracking
+- Automatic prompt formatting per model type
+
+**Current Status**: Functional but not integrated with ComponentRegistry or EvaluationOrchestrator.
+
+#### MCPBenchAdapter (Partially Implemented)
+**Location**: `evaluation/mcp_bench/mcpbench_adapter.py`  
+**Purpose**: Execute tool-using tasks from MCP Benchmark dataset
+
+**Current Status**: Adapter structure exists but implementation details not fully complete.
 
 ### Extensibility Patterns
 
@@ -224,7 +259,9 @@ class NewProvider(BaseModel):
 ModelRegistry.register_provider("new_provider", NewProvider)
 
 # 3. Use in config
-model_names = ["new_provider:model_name"]
+[providers.new_provider]
+models = ["model_name"]
+enabled_models = ["model_name"]
 ```
 
 #### Adding New Memory Methods
@@ -244,9 +281,13 @@ memory_methods = ["truncation", "sliding_window"]
 
 #### Adding New Benchmarks
 ```python
-# 1. Implement adapter
+# 1. Implement adapter inheriting from BenchmarkAdapter
 class NewBenchmarkAdapter(BenchmarkAdapter):
-    def run_evaluation(self, model, memory_method, config):
+    async def run_benchmark(self):
+        # Implementation
+        pass
+    
+    def evaluate_result(self, task, execution_result):
         # Implementation
         pass
 
@@ -269,32 +310,42 @@ benchmarks = ["nestful", "mcpbench", "new_benchmark"]
 
 ### Current Implementation Status
 
-**✅ Implemented Components**:
-- ComponentRegistry with full delegation
+**✅ Fully Implemented**:
+- ComponentRegistry with delegation pattern
 - ModelRegistry (Ollama, OpenRouter providers)  
 - MemoryRegistry (TruncationMemory)
-- BenchmarkRegistry (Nestful, MCPBench adapters)
-- EvaluationOrchestrator with multi-component support
-- SQLite ResultsStorage with JSON export
+- EvaluationOrchestrator with provider-based configuration
+- SQLite ResultsStorage with comprehensive features
 - Configuration-driven evaluation pipeline
+- NestfulAdapter (functional but not integrated)
 
-**🔄 Integration Points**:
-- Memory methods integrate with all benchmark types
-- Model providers work across all benchmarks  
-- Results storage captures all evaluation combinations
-- Configuration supports flexible component specification
+**🔄 Partially Implemented**:
+- BenchmarkRegistry (structure exists, adapters not registered)
+- MCPBenchAdapter (exists but incomplete)
+- Benchmark integration with orchestrator (currently simulated)
 
-This architecture provides a robust foundation for systematic evaluation across multiple dimensions while maintaining extensibility for future research directions.
+**❌ Not Yet Implemented**:
+- Anthropic provider (configured but not implemented)
+- Real benchmark execution in orchestrator
+- Adapter registration in BenchmarkRegistry
+- Comprehensive error handling in benchmark adapters
+
+**🎯 Integration Gaps**:
+- Benchmark adapters exist but are not registered with BenchmarkRegistry
+- EvaluationOrchestrator simulates benchmark execution instead of using real adapters
+- Memory methods are created but not integrated with benchmark execution
+
+This architecture provides a robust foundation for systematic evaluation with clear separation of concerns and extensibility patterns. The main gaps are in benchmark adapter integration, which requires connecting the existing adapters to the registry and orchestration systems.
 
 ---
 
-## Overview
+## Unified Task Execution Framework (Proposed Design)
 
-This document outlines the architectural design for a unified task execution framework that standardizes how tasks from both the **mcp-bench** and **nestful** datasets are executed, evaluated, and persisted. The design prioritizes **maximum control**, **extensibility**, and **data resilience** through sequential execution with immediate result persistence.
+*Note: This section describes a proposed design that is not currently implemented in the codebase. The actual implementation follows the Registry & Orchestrator pattern described above.*
 
----
+This section outlines the architectural design for a unified task execution framework that would standardize how tasks from both the **mcp-bench** and **nestful** datasets are executed, evaluated, and persisted. This design prioritizes **maximum control**, **extensibility**, and **data resilience** through sequential execution with immediate result persistence.
 
-## System Architecture
+### System Architecture (Proposed)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -332,56 +383,9 @@ This document outlines the architectural design for a unified task execution fra
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
----
+### Proposed Unified Data Models
 
-## Core Components
-
-### 1. Unified Configuration Layer
-
-**Purpose**: Load and validate execution configuration from TOML.
-
-**Responsibilities**:
-- Parse TOML configuration
-- Validate required fields
-- Provide configuration object to runners
-- Handle environment variable expansion (optional)
-
-**Configuration Structure** (example `config.toml`):
-```toml
-[execution]
-output_db = "results.db"
-sequential = true
-log_level = "info"
-
-[models]
-primary = "gpt-4"
-
-[paths]
-# Optional: override dataset paths if needed
-mcp_bench_path = "/path/to/mcp-bench"
-nestful_path = "/path/to/nestful"
-```
-
-**Component**: `ConfigLoader`
-```python
-class ConfigLoader:
-    @staticmethod
-    def load(config_path: str) -> Config:
-        """Load and validate TOML configuration"""
-        pass
-    
-    def get(self, key: str, default=None):
-        """Get configuration value by dot notation"""
-        pass
-```
-
----
-
-### 2. Unified Data Models
-
-**Purpose**: Define common abstractions that all datasets adhere to.
-
-#### 2.1 UnifiedTask
+#### UnifiedTask
 Standardized representation of any task from any dataset.
 
 ```python
@@ -404,7 +408,7 @@ class UnifiedTask:
     task_data: Any  # Original task object from dataset
 ```
 
-#### 2.2 ExecutionContext
+#### ExecutionContext
 Holds execution-specific information passed to tasks.
 
 ```python
@@ -421,7 +425,7 @@ class ExecutionContext:
     timeout_seconds: Optional[int] = None
 ```
 
-#### 2.3 TaskEvaluation
+#### TaskEvaluation
 Standardized evaluation result.
 
 ```python
@@ -446,638 +450,21 @@ class TaskEvaluation:
     metadata: Dict[str, Any] = field(default_factory=dict)
 ```
 
----
-
-### 3. Task Abstraction Layer (Adapter Pattern)
-
-**Purpose**: Normalize both datasets to a unified interface while maintaining control over execution logic.
-
-**Design Decision**: Implement core logic from scratch (Option B) rather than wrapping existing code. This enables:
-- Precise control over task execution flow
-- Standardized metrics collection (token usage, timing)
-- Consistent error handling
-- Future optimization without modifying original codebases
-
-#### 3.1 TaskAdapter Interface
-
-```python
-class TaskAdapter(ABC):
-    """
-    Abstract base class for dataset-specific adapters.
-    
-    Each adapter is responsible for:
-    1. Loading tasks from its dataset
-    2. Executing tasks with a given model
-    3. Evaluating and scoring results
-    """
-    
-    @abstractmethod
-    def load_tasks(self, dataset_path: str, filters: Optional[Dict] = None) -> List[UnifiedTask]:
-        """
-        Load tasks from the dataset.
-        
-        Args:
-            dataset_path: Path to dataset directory/file
-            filters: Optional filter criteria (dataset-specific)
-        
-        Returns:
-            List of UnifiedTask objects
-        """
-        pass
-    
-    @abstractmethod
-    def execute_task(
-        self,
-        task: UnifiedTask,
-        context: ExecutionContext
-    ) -> Tuple[Any, Dict[str, Any]]:
-        """
-        Execute a single task using the specified model.
-        
-        Args:
-            task: The task to execute
-            context: Execution context (model, config, etc.)
-        
-        Returns:
-            Tuple of (raw_output, metrics_dict) where metrics_dict contains:
-            - token_usage: int (total tokens used)
-            - time_taken: float (seconds)
-            - Any other relevant metrics
-        """
-        pass
-    
-    @abstractmethod
-    def evaluate_result(
-        self,
-        task: UnifiedTask,
-        raw_output: Any
-    ) -> bool:
-        """
-        Evaluate whether the task result is correct.
-        
-        Args:
-            task: The task that was executed
-            raw_output: The raw output from execution
-        
-        Returns:
-            Boolean indicating success
-        """
-        pass
-```
-
-#### 3.2 MCPBenchAdapter
-
-**Responsibilities**:
-- Load tasks from mcp-bench JSON files
-- Connect to MCP servers
-- Execute tasks using LLM with tool access
-- Evaluate results against success criteria
-- Track token usage from LLM calls
-- Track execution time
-
-**Key Methods**:
-
-```python
-class MCPBenchAdapter(TaskAdapter):
-    def __init__(self, llm_factory: LLMFactory):
-        """Initialize with LLM provider factory."""
-        self.llm_factory = llm_factory
-    
-    def load_tasks(
-        self,
-        dataset_path: str,
-        filters: Optional[Dict] = None
-    ) -> List[UnifiedTask]:
-        """
-        Load from mcp-bench JSON files.
-        
-        Handles:
-        - Multiple task format files (single, multi_2server, multi_3server)
-        - Parsing JSON structure
-        - Extracting servers, questions, success criteria
-        - Applying optional filters (by server_name, task_type, etc.)
-        """
-        pass
-    
-    def execute_task(
-        self,
-        task: UnifiedTask,
-        context: ExecutionContext
-    ) -> Tuple[Any, Dict[str, Any]]:
-        """
-        Execute mcp-bench task.
-        
-        Flow:
-        1. Extract required MCP servers from task metadata
-        2. Start/connect to MCP server instances
-        3. Initialize LLM with server tools
-        4. Run agentic loop until completion or max iterations
-        5. Track tokens from LLM provider
-        6. Return final agent output and metrics
-        """
-        pass
-    
-    def evaluate_result(
-        self,
-        task: UnifiedTask,
-        raw_output: Any
-    ) -> bool:
-        """
-        Check if output satisfies success criteria.
-        
-        Handles:
-        - String matching against expected results
-        - Custom validation logic from task metadata
-        - Partial success scenarios
-        """
-        pass
-```
-
-**Internal Dependencies** (re-implement):
-- MCP server connection/management (from `mcp_modules/`)
-- LLM integration (from `llm/factory.py`)
-- Agent execution loop logic (from `agent/executor.py`)
-
-#### 3.3 NestfulAdapter
-
-**Responsibilities**:
-- Load tasks from nestful JSONL dataset
-- Parse instructions and available functions
-- Execute LLM to generate function chains
-- Evaluate correctness of generated chains
-- Track token usage and execution time
-
-**Key Methods**:
-
-```python
-class NestfulAdapter(TaskAdapter):
-    def __init__(self, llm_factory: LLMFactory):
-        """Initialize with LLM provider factory."""
-        self.llm_factory = llm_factory
-    
-    def load_tasks(
-        self,
-        dataset_path: str,
-        filters: Optional[Dict] = None
-    ) -> List[UnifiedTask]:
-        """
-        Load from nestful JSONL file.
-        
-        Handles:
-        - Reading JSONL format
-        - Extracting instructions, available functions, expected output
-        - Applying optional filters (by difficulty, function_type, etc.)
-        - Normalizing to UnifiedTask format
-        """
-        pass
-    
-    def execute_task(
-        self,
-        task: UnifiedTask,
-        context: ExecutionContext
-    ) -> Tuple[Any, Dict[str, Any]]:
-        """
-        Execute nestful task (function chain generation).
-        
-        Flow:
-        1. Format instruction with available functions context
-        2. Call LLM to generate function chain
-        3. Parse LLM output to extract chain specification
-        4. Execute function chain (or score parsing correctness)
-        5. Track tokens and execution time
-        6. Return function chain and metrics
-        """
-        pass
-    
-    def evaluate_result(
-        self,
-        task: UnifiedTask,
-        raw_output: Any
-    ) -> bool:
-        """
-        Evaluate function chain correctness.
-        
-        Handles:
-        - Parsing output format
-        - Comparing against ground-truth chains
-        - Partial credit scenarios
-        - Execution correctness vs. chain structure correctness
-        """
-        pass
-```
-
-**Internal Dependencies** (re-implement):
-- Output parsing logic (from `output_parsers.py`)
-- Scoring logic (from `scorer.py`)
-- LLM integration (compatible with both datasets)
-
----
-
-### 5. User-Facing API Layer
-
-**Purpose**: Provide intuitive, chainable API for defining and running experiments.
-
-#### 5.1 UnifiedRunner
-
-Main entry point for users.
-
-```python
-class UnifiedRunner:
-    """
-    High-level API for defining and executing unified tasks.
-    
-    Responsibilities:
-    - Initialize adapters and infrastructure
-    - Register datasets
-    - Coordinate execution
-    - Return results
-    """
-    
-    def __init__(self, config_path: str, model: str):
-        """
-        Initialize runner.
-        
-        Args:
-            config_path: Path to TOML config file
-            model: Model identifier (e.g., "gpt-4", "claude-3", "ollama-mistral")
-        """
-        self.config = ConfigLoader.load(config_path)
-        self.model = model
-        self.task_groups: Dict[str, TaskGroup] = {}
-        self._initialize_adapters()
-    
-    def _initialize_adapters(self):
-        """Create adapter instances for each dataset."""
-        # Initialize LLM factory with config
-        # Initialize MCPBenchAdapter
-        # Initialize NestfulAdapter
-        pass
-    
-    def add_dataset(
-        self,
-        dataset_name: str,
-        dataset_path: str
-    ) -> 'TaskGroup':
-        """
-        Register a dataset for execution.
-        
-        Args:
-            dataset_name: Identifier ("mcp-bench", "nestful", etc.)
-            dataset_path: Path to dataset
-        
-        Returns:
-            TaskGroup for chaining filters
-        """
-        pass
-    
-    def run(self) -> ExecutionReport:
-        """
-        Execute all registered task groups sequentially.
-        
-        Returns:
-            ExecutionReport with results
-        """
-        pass
-```
-
-#### 5.2 TaskGroup
-
-Returned by `add_dataset()`, enables chainable filtering.
-
-```python
-class TaskGroup:
-    """
-    Represents a collection of tasks from a single dataset.
-    
-    Supports:
-    - Dynamic filtering
-    - Limiting number of tasks
-    - Chaining multiple filters
-    """
-    
-    def __init__(
-        self,
-        dataset_name: str,
-        dataset_path: str,
-        adapter: TaskAdapter
-    ):
-        """Initialize task group."""
-        self.dataset_name = dataset_name
-        self.dataset_path = dataset_path
-        self.adapter = adapter
-        self.filters = {}
-        self._tasks = None
-    
-    def filter_by(self, **criteria) -> 'TaskGroup':
-        """
-        Apply filter criterion to tasks.
-        
-        Args:
-            **criteria: Dataset-specific filter criteria
-            Example: filter_by(servers=['weather', 'time'])
-        
-        Returns:
-            Self for chaining
-        """
-        pass
-    
-    def limit(self, n: int) -> 'TaskGroup':
-        """
-        Limit results to first n tasks.
-        
-        Args:
-            n: Maximum number of tasks
-        
-        Returns:
-            Self for chaining
-        """
-        pass
-    
-    def _load_tasks(self) -> List[UnifiedTask]:
-        """Load and cache tasks with filters applied."""
-        pass
-```
-
----
-
-## Execution Flow
-
-### Standard Execution Sequence
-
-```
-1. User calls:
-   runner = UnifiedRunner("config.toml", model="gpt-4")
-   
-2. Runner initialization:
-   - Load config from TOML
-   - Initialize adapters (MCPBenchAdapter, NestfulAdapter)
-   - Create ResultWriter with output_db path
-   
-3. User registers datasets:
-   runner.add_dataset("mcp-bench", "/path/to/mcp-bench") \
-       .filter_by(servers=['weather', 'time'])
-   runner.add_dataset("nestful", "/path/to/nestful") \
-       .limit(10)
-   
-4. User calls:
-   report = runner.run()
-   
-5. Execution logic:
-   a. For each TaskGroup registered:
-      i. Load tasks via adapter.load_tasks()
-      ii. Apply filters via TaskFilter
-   
-   b. Combine all filtered tasks into single list
-   
-   c. Create TaskExecutor
-   
-   d. For each task (sequential):
-      i. Create ExecutionContext(model=model, config=config, task_id=task.id)
-      
-      ii. Get adapter for task.source
-      
-      iii. Call adapter.execute_task(task, context)
-           Returns: (raw_output, metrics_dict)
-      
-      iv. Call adapter.evaluate_result(task, raw_output)
-          Returns: bool (success)
-      
-      v. Create TaskEvaluation(task_id, success, metrics, raw_output)
-      
-      vi. Call result_writer.write_execution(evaluation)
-          ** Writes to SQLite immediately **
-      
-      vii. Log: "[Task X/Y] source=mcp-bench id=abc success=true tokens=1234 time=2.3s"
-      
-      viii. Continue to next task (no stopping on failure)
-   
-   e. Return ExecutionReport(summary stats)
-   
-6. User receives report with:
-   - Total/successful/failed task counts
-   - Total tokens and time
-   - Success rate
-   - Any critical errors
-```
-
----
-
-## Data Persistence Strategy
-
-### Why Immediate Persistence?
-
-- **Crash resilience**: Partial results saved if process dies mid-execution
-- **Memory efficiency**: No accumulation of results in RAM
-- **Audit trail**: Exact execution order recorded via timestamps
-- **Non-blocking**: Writes are fast (single table inserts)
-
-### Database Access Patterns
-
-**For result retrieval** (post-execution):
-```python
-# Example queries
-import sqlite3
-
-conn = sqlite3.connect("results.db")
-conn.row_factory = sqlite3.Row
-
-# Success rate by dataset
-cur = conn.execute("""
-    SELECT 
-        t.source,
-        COUNT(*) as total,
-        SUM(CASE WHEN e.success THEN 1 ELSE 0 END) as successful
-    FROM executions e
-    JOIN tasks t ON e.task_id = t.id
-    WHERE e.model = ?
-    GROUP BY t.source
-""", ("gpt-4",))
-
-# Average tokens by dataset and model
-cur = conn.execute("""
-    SELECT 
-        t.source,
-        e.model,
-        AVG(e.token_usage) as avg_tokens,
-        AVG(e.time_taken) as avg_time
-    FROM executions e
-    JOIN tasks t ON e.task_id = t.id
-    GROUP BY t.source, e.model
-""")
-```
-
----
-
-## Integration Points
-
-### With Existing Codebases
-
-Since we're re-implementing logic (Option B), integration is **minimal**:
-
-#### From mcp-bench, leverage:
-- Task file formats (JSON structure)
-- MCP server specifications and configurations
-- Reference implementations for evaluation logic
-- Server manager implementations for connection handling
-
-#### From nestful, leverage:
-- Task file formats (JSONL structure)
-- Function definitions and schemas
-- Reference implementations for evaluation metrics
-- Instruction templates
-
-### LLM Integration
-
-The `UnifiedRunner` accepts a model identifier and uses an LLM factory pattern:
-
-```python
-# To add support for new LLM providers:
-# 1. Implement LLMProvider interface
-# 2. Register in LLMFactory
-# 3. Pass model string to UnifiedRunner
-
-llm_factory.register("gpt-4", OpenAIProvider)
-llm_factory.register("claude-3", AnthropicProvider)
-llm_factory.register("ollama-mistral", OllamaProvider)
-
-# UnifiedRunner uses factory internally
-runner = UnifiedRunner("config.toml", model="gpt-4")
-```
-
----
-
-## Development Phases
-
-### Phase 1: Foundation (Core Architecture)
-**Goals**: Establish unified framework
-
-1. **Data Models** (`unified_models.py`)
-   - UnifiedTask
-   - ExecutionContext
-   - TaskEvaluation
-   - ExecutionReport
-
-2. **Adapter Pattern** (`adapters/base.py`, `adapters/mcp_bench.py`, `adapters/nestful.py`)
-   - TaskAdapter abstract base
-   - MCPBenchAdapter (re-implemented logic)
-   - NestfulAdapter (re-implemented logic)
-
-3. **Configuration** (`config.py`)
-   - ConfigLoader
-   - TOML parsing
-
-4. **Orchestration** (`orchestration.py`)
-   - TaskFilter
-   - TaskExecutor
-   - ResultWriter
-   - DatabaseSchema
-
-5. **API Layer** (`runner.py`)
-   - UnifiedRunner
-   - TaskGroup
-
-### Phase 2: Enhancement (Future)
-- MetaRunner for model comparison
-- Advanced query interface over SQLite results
-- Task grouping definitions (saved configs)
-- Performance optimizations
-- Optional parallelization (structure for future)
-- Caching mechanisms for frequently-accessed tasks
-
----
-
-## Design Patterns & Principles
-
-| Pattern/Principle          | Implementation                                            |
-| -------------------------- | --------------------------------------------------------- |
-| **Adapter Pattern**        | TaskAdapter interface normalizes different datasets       |
-| **Separation of Concerns** | Orchestration, execution, persistence are distinct layers |
-| **Single Responsibility**  | Each class has one clear purpose                          |
-| **Extensibility**          | New datasets require only new adapter implementation      |
-| **Fail-Safe Persistence**  | Results written immediately, no batch loss                |
-| **Sequential Execution**   | Simple, deterministic, easy to debug                      |
-| **Configuration as Code**  | TOML for environment, API for experiments                 |
-
----
-
-## Error Handling Strategy
-
-### Execution-Level Errors
-- Catch exceptions during task execution
-- Log error with task_id and timestamp
-- Store error message in database
-- Mark task as failed (success=False)
-- Continue to next task (no stopping)
-
-### System-Level Errors
-- Database write failure: Log to stderr, but continue (optional: retry)
-- Adapter initialization failure: Raise and halt
-- Config parsing failure: Raise and halt
-- Missing dataset path: Raise and halt
-
-### Retry Logic (Optional Future)
-- Configurable retry count per task
-- Exponential backoff for transient failures
-- Log retry attempts
-
----
-
-## Future Extensibility
-
-### Adding New Datasets
-
-1. Create new adapter class inheriting from `TaskAdapter`
-2. Implement three methods:
-   - `load_tasks()`: Parse dataset format → UnifiedTask list
-   - `execute_task()`: Run task with model → (output, metrics)
-   - `evaluate_result()`: Score output → bool
-3. Register adapter in UnifiedRunner
-4. Done! Existing orchestration handles the rest
-
-Example:
-```python
-class MyDatasetAdapter(TaskAdapter):
-    def load_tasks(self, dataset_path, filters=None):
-        # Parse my dataset format
-        pass
-    
-    def execute_task(self, task, context):
-        # Execute with model
-        pass
-    
-    def evaluate_result(self, task, raw_output):
-        # Score result
-        pass
-
-# In UnifiedRunner
-runner._adapters["my-dataset"] = MyDatasetAdapter(llm_factory)
-```
-
-### Adding New LLM Providers
-
-1. Implement LLMProvider interface
-2. Handle token counting and response tracking
-3. Register in LLMFactory
-4. Pass model string to UnifiedRunner
-
-### Adding Metrics
-
-1. Extend `metrics` dict in TaskEvaluation
-2. Populate in adapter's `execute_task()` return value
-3. All downstream code (storage, reporting) automatically captures
-
----
-
-## Summary
-
-This architecture provides:
-
-✓ **Unified Interface**: Single API for both datasets  
-✓ **Maximum Control**: Per-task filtering, model assignment, execution tracking  
-✓ **Extensibility**: Add datasets by implementing one interface  
-✓ **Resilience**: Immediate persistence prevents data loss  
-✓ **Clarity**: Layered design with clear responsibilities  
-✓ **Auditability**: Complete execution history in SQLite  
-✓ **Future-Ready**: Structure supports MetaRunner and optimization  
-
-Use this document as a development guide. Each phase builds on the previous, and the modular design allows implementation in any order once dependencies are clear.
+### Summary
+
+The current implementation provides a solid foundation with:
+
+✓ **Registry Pattern**: Centralized component management  
+✓ **Provider-based Configuration**: Clear model organization  
+✓ **Immediate Persistence**: Crash-resistant result storage  
+✓ **Extensible Architecture**: Easy addition of new components  
+✓ **Separation of Concerns**: Clear component boundaries  
+
+**Next Steps** for full functionality:
+1. Register benchmark adapters with BenchmarkRegistry
+2. Integrate real benchmark execution in EvaluationOrchestrator
+3. Implement memory method integration with benchmark adapters
+4. Complete MCPBenchAdapter implementation
+5. Add Anthropic provider implementation
+
+The proposed Unified Task Execution Framework represents a future enhancement that would provide even more standardized task handling across datasets.
