@@ -18,9 +18,23 @@ def test_evaluation_orchestrator_initialization():
     from evaluation.orchestrator import EvaluationOrchestrator
     
     config = {
-        "model_names": ["llama3.2:3b"],
+        "providers": {
+            "ollama": {
+                "models": ["llama3.2:3b"],
+                "enabled_models": ["llama3.2:3b"],
+                "temperature": 0.3,
+                "max_tokens": 1000
+            }
+        },
         "memory_methods": ["truncation"],
-        "benchmarks": ["nestful"]
+        "executed_benchmarks": ["nestful"],
+        "benchmarks": {
+            "nestful": {
+                "dataset": "data_v2/nestful_data.jsonl",
+                "temperature": 0.0,
+                "max_tokens": 1000
+            }
+        }
     }
     
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -28,6 +42,9 @@ def test_evaluation_orchestrator_initialization():
         
         assert orchestrator.config == config
         assert orchestrator.results_storage is not None
+        assert len(orchestrator.model_specs) == 1
+        assert orchestrator.model_specs[0]["name"] == "llama3.2:3b"
+        assert orchestrator.model_specs[0]["provider"] == "ollama"
 
 
 def test_evaluation_orchestrator_parse_model_specs():
@@ -35,17 +52,25 @@ def test_evaluation_orchestrator_parse_model_specs():
     from evaluation.orchestrator import EvaluationOrchestrator
     
     config = {
-        "model_names": ["llama3.2:3b", "llama3.1:8b"],
-        "nestful": {"provider": "ollama"}
+        "providers": {
+            "ollama": {
+                "models": ["llama3.2:3b", "llama3.1:8b"],
+                "enabled_models": ["llama3.2:3b", "llama3.1:8b"],
+                "temperature": 0.3
+            }
+        },
+        "memory_methods": ["truncation"],
+        "executed_benchmarks": ["nestful"]
     }
     
     orchestrator = EvaluationOrchestrator(config)
-    model_specs = orchestrator._parse_model_specs()
+    model_specs = orchestrator.model_specs
     
     assert len(model_specs) == 2
     assert model_specs[0]["name"] == "llama3.2:3b"
     assert model_specs[0]["provider"] == "ollama"
     assert model_specs[1]["name"] == "llama3.1:8b"
+    assert model_specs[1]["provider"] == "ollama"
 
 
 def test_evaluation_orchestrator_generate_combinations():
@@ -53,9 +78,15 @@ def test_evaluation_orchestrator_generate_combinations():
     from evaluation.orchestrator import EvaluationOrchestrator
     
     config = {
-        "model_names": ["llama3.2:3b", "llama3.1:8b"],
+        "providers": {
+            "ollama": {
+                "models": ["llama3.2:3b", "llama3.1:8b"],
+                "enabled_models": ["llama3.2:3b", "llama3.1:8b"],
+                "temperature": 0.3
+            }
+        },
         "memory_methods": ["truncation"],
-        "benchmarks": ["nestful", "mcpbench"]
+        "executed_benchmarks": ["nestful", "mcpbench"]
     }
     
     orchestrator = EvaluationOrchestrator(config)
@@ -91,14 +122,26 @@ async def test_evaluation_orchestrator_run_single_evaluation(mock_registry):
         "successful": 8
     }
     
-    mock_registry.create_model.return_value = mock_model
-    mock_registry.create_memory_method.return_value = mock_memory
-    mock_registry.create_benchmark.return_value = mock_benchmark
+    mock_registry.return_value.create_model.return_value = mock_model
+    mock_registry.return_value.create_memory_method.return_value = mock_memory
+    mock_registry.return_value.create_benchmark.return_value = mock_benchmark
     
     config = {
-        "model_names": ["test-model"],
+        "providers": {
+            "test": {
+                "models": ["test-model"],
+                "enabled_models": ["test-model"],
+                "temperature": 0.3
+            }
+        },
         "memory_methods": ["truncation"],
-        "benchmarks": ["test-benchmark"]
+        "executed_benchmarks": ["test-benchmark"],
+        "benchmarks": {
+            "test-benchmark": {
+                "temperature": 0.0,
+                "max_tokens": 1000
+            }
+        }
     }
     
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -123,24 +166,36 @@ async def test_evaluation_orchestrator_run_single_evaluation_error(mock_registry
     from evaluation.orchestrator import EvaluationOrchestrator
     
     # Mock components that raise errors
-    mock_registry.create_model.side_effect = Exception("Model creation failed")
+    mock_registry.return_value.create_model.side_effect = Exception("Model creation failed")
     
     config = {
-        "model_names": ["test-model"],
+        "providers": {
+            "test": {
+                "models": ["test-model"],
+                "enabled_models": ["test-model"],
+                "temperature": 0.3
+            }
+        },
         "memory_methods": ["truncation"],
-        "benchmarks": ["test-benchmark"]
+        "executed_benchmarks": ["test-benchmark"],
+        "benchmarks": {
+            "test-benchmark": {
+                "temperature": 0.0,
+                "max_tokens": 1000
+            }
+        }
     }
     
     with tempfile.TemporaryDirectory() as temp_dir:
         orchestrator = EvaluationOrchestrator(config, results_dir=temp_dir)
         
         model_spec = {"name": "test-model", "provider": "test"}
-        result = await orchestrator._run_single_evaluation(
+        result = await orchestrator._run_single_evaluation_with_error_handling(
             model_spec, "truncation", "test-benchmark"
         )
         
         assert result["status"] == "error"
-        assert "Model creation failed" in result["error"]
+        assert "Model creation failed" in str(result["error"])
 
 
 @patch('evaluation.orchestrator.ComponentRegistry')
@@ -159,14 +214,26 @@ async def test_evaluation_orchestrator_run_full_evaluation(mock_registry):
     mock_benchmark = AsyncMock()
     mock_benchmark.run_benchmark.return_value = {"score": 0.85}
     
-    mock_registry.create_model.return_value = mock_model
-    mock_registry.create_memory_method.return_value = mock_memory
-    mock_registry.create_benchmark.return_value = mock_benchmark
+    mock_registry.return_value.create_model.return_value = mock_model
+    mock_registry.return_value.create_memory_method.return_value = mock_memory
+    mock_registry.return_value.create_benchmark.return_value = mock_benchmark
     
     config = {
-        "model_names": ["model1", "model2"],
+        "providers": {
+            "test": {
+                "models": ["model1", "model2"],
+                "enabled_models": ["model1", "model2"],
+                "temperature": 0.3
+            }
+        },
         "memory_methods": ["truncation"],
-        "benchmarks": ["benchmark1"]
+        "executed_benchmarks": ["benchmark1"],
+        "benchmarks": {
+            "benchmark1": {
+                "temperature": 0.0,
+                "max_tokens": 1000
+            }
+        }
     }
     
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -184,7 +251,18 @@ def test_evaluation_orchestrator_create_error_result():
     """Test creating error result entries."""
     from evaluation.orchestrator import EvaluationOrchestrator
     
-    config = {"model_names": ["test"]}
+    config = {
+        "providers": {
+            "test": {
+                "models": ["test"],
+                "enabled_models": ["test"],
+                "temperature": 0.3
+            }
+        },
+        "memory_methods": ["truncation"],
+        "executed_benchmarks": ["test-benchmark"]
+    }
+    
     orchestrator = EvaluationOrchestrator(config)
     
     model_spec = {"name": "test-model", "provider": "test"}
@@ -200,39 +278,28 @@ def test_evaluation_orchestrator_create_error_result():
     assert "timestamp" in error_result
 
 
-def test_evaluation_orchestrator_determine_provider():
-    """Test provider determination logic."""
-    from evaluation.orchestrator import EvaluationOrchestrator
-    
-    config = {
-        "nestful": {"provider": "ollama"},
-        "model_names": ["llama3.2:3b"]
-    }
-    
-    orchestrator = EvaluationOrchestrator(config)
-    
-    # Should detect ollama from config
-    provider = orchestrator._determine_provider("llama3.2:3b")
-    assert provider == "ollama"
-    
-    # Should fallback to ollama for llama models
-    config_no_provider = {"model_names": ["llama3.1:8b"]}
-    orchestrator2 = EvaluationOrchestrator(config_no_provider)
-    provider2 = orchestrator2._determine_provider("llama3.1:8b")
-    assert provider2 == "ollama"
-
-
 def test_evaluation_orchestrator_generate_summary():
     """Test summary generation from results."""
     from evaluation.orchestrator import EvaluationOrchestrator
     
-    config = {"model_names": ["test"]}
+    config = {
+        "providers": {
+            "test": {
+                "models": ["test"],
+                "enabled_models": ["test"],
+                "temperature": 0.3
+            }
+        },
+        "memory_methods": ["truncation"],
+        "executed_benchmarks": ["test-benchmark"]
+    }
+    
     orchestrator = EvaluationOrchestrator(config)
     
     results = [
-        {"status": "success", "model": {"name": "model1"}},
-        {"status": "success", "model": {"name": "model2"}},
-        {"status": "error", "model": {"name": "model3"}}
+        {"status": "success", "model": {"name": "model1"}, "memory_method": "truncation", "benchmark": "test1"},
+        {"status": "success", "model": {"name": "model2"}, "memory_method": "truncation", "benchmark": "test2"},
+        {"status": "error", "model": {"name": "model3"}, "memory_method": "truncation", "benchmark": "test3"}
     ]
     
     summary = orchestrator._generate_summary(results)
@@ -242,6 +309,9 @@ def test_evaluation_orchestrator_generate_summary():
     assert summary["failed_runs"] == 1
     assert summary["success_rate"] == 2/3
     assert len(summary["results"]) == 3
+    assert "models_tested" in summary
+    assert "memory_methods_tested" in summary
+    assert "benchmarks_tested" in summary
 
 
 @patch('evaluation.orchestrator.ComponentRegistry')
@@ -265,14 +335,26 @@ async def test_evaluation_orchestrator_with_concurrent_evaluations(mock_registry
     
     mock_benchmark.run_benchmark = slow_benchmark
     
-    mock_registry.create_model.return_value = mock_model
-    mock_registry.create_memory_method.return_value = mock_memory
-    mock_registry.create_benchmark.return_value = mock_benchmark
+    mock_registry.return_value.create_model.return_value = mock_model
+    mock_registry.return_value.create_memory_method.return_value = mock_memory
+    mock_registry.return_value.create_benchmark.return_value = mock_benchmark
     
     config = {
-        "model_names": ["model1", "model2"],
+        "providers": {
+            "test": {
+                "models": ["model1", "model2"],
+                "enabled_models": ["model1", "model2"],
+                "temperature": 0.3
+            }
+        },
         "memory_methods": ["truncation"],
-        "benchmarks": ["benchmark1"],
+        "executed_benchmarks": ["benchmark1"],
+        "benchmarks": {
+            "benchmark1": {
+                "temperature": 0.0,
+                "max_tokens": 1000
+            }
+        },
         "concurrent_evaluations": 2
     }
     
