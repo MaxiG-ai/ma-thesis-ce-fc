@@ -6,7 +6,7 @@ import asyncio
 import itertools
 import sys
 from pathlib import Path
-from typing import List, Dict, Any, Iterator, Tuple
+from typing import List, Dict, Any, Iterator, Tuple, Type
 from datetime import datetime
 import logging
 
@@ -14,13 +14,38 @@ import logging
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from evaluation.registries import ComponentRegistry
+from models.registry import ModelRegistry
+from memory.registry import MemoryRegistry
 from evaluation.results import ResultsStorage
 
 from evaluation.mcp_bench.mcpbench_adapter import MCPBenchAdapter
 from evaluation.nestful.nestful_adapter import NestfulAdapter
 
 logger = logging.getLogger(__name__)
+
+
+class BenchmarkRegistry:
+    """Registry for benchmark adapters."""
+    
+    _benchmarks: Dict[str, Type] = {}
+    
+    @classmethod
+    def create_benchmark(cls, benchmark_name: str, **kwargs):
+        """Create benchmark instance."""
+        if benchmark_name not in cls._benchmarks:
+            raise ValueError(f"Benchmark '{benchmark_name}' not registered")
+        
+        return cls._benchmarks[benchmark_name](**kwargs)
+    
+    @classmethod
+    def register_benchmark(cls, name: str, benchmark_cls: Type) -> None:
+        """Register a new benchmark."""
+        cls._benchmarks[name] = benchmark_cls
+    
+    @classmethod
+    def get_available_benchmarks(cls) -> List[str]:
+        """Get available benchmark names."""
+        return list(cls._benchmarks.keys())
 
 
 class EvaluationOrchestrator:
@@ -36,13 +61,9 @@ class EvaluationOrchestrator:
         """
         self.config = config
         self.results_storage = ResultsStorage(results_dir)
-        self.registry = ComponentRegistry()
         
-        # Update model registry with configuration
-        providers_config = self.config.get("providers", {})
-        if providers_config:
-            from models.registry import ModelRegistry
-            ModelRegistry.update_provider_catalog(providers_config)
+        # Load configuration into ModelRegistry
+        ModelRegistry.load_from_config()
         
         # Auto-register benchmarks from config
         self._register_benchmarks_from_config()
@@ -122,11 +143,11 @@ class EvaluationOrchestrator:
             try:
                 if benchmark_name == "nestful":
                     from evaluation.nestful.nestful_adapter import NestfulAdapter
-                    self.registry.register_benchmark("nestful", NestfulAdapter)
+                    BenchmarkRegistry.register_benchmark("nestful", NestfulAdapter)
                     logger.info(f"Registered benchmark: {benchmark_name}")
                 elif benchmark_name == "mcpbench":
                     from evaluation.mcp_bench.mcpbench_adapter import MCPBenchAdapter
-                    self.registry.register_benchmark("mcpbench", MCPBenchAdapter)
+                    BenchmarkRegistry.register_benchmark("mcpbench", MCPBenchAdapter)
                     logger.info(f"Registered benchmark: {benchmark_name}")
                 else:
                     logger.warning(f"Unknown benchmark '{benchmark_name}' in config - skipping")
@@ -227,13 +248,13 @@ class EvaluationOrchestrator:
         start_time = datetime.now()
         
         # Initialize components
-        model = self.registry.create_model(
+        model = ModelRegistry.create_model(
             provider=model_spec["provider"],
             model_name=model_spec["name"],
             **model_spec.get("config", {})
         )
         
-        memory = self.registry.create_memory_method(
+        memory = MemoryRegistry.create_method(
             method_name=memory_method,
             **self.config.get("memoryMethods", {}).get(memory_method, {})
         )
@@ -242,7 +263,7 @@ class EvaluationOrchestrator:
         benchmark_config = self.config.get("benchmarks", {}).get(benchmark, {})
         
         # Create benchmark instance with model, memory, and configuration
-        benchmark_instance = self.registry.create_benchmark(
+        benchmark_instance = BenchmarkRegistry.create_benchmark(
             benchmark_name=benchmark,
             model_instance=model,
             memory_instance=memory,
@@ -265,39 +286,39 @@ class EvaluationOrchestrator:
             "status": "success"
         }
     
-    async def _simulate_benchmark_execution(
-        self, 
-        model, 
-        memory, 
-        benchmark: str, 
-        benchmark_config: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Simulate benchmark execution for testing purposes."""
+    # async def _simulate_benchmark_execution(
+    #     self, 
+    #     model, 
+    #     memory, 
+    #     benchmark: str, 
+    #     benchmark_config: Dict[str, Any]
+    # ) -> Dict[str, Any]:
+    #     """Simulate benchmark execution for testing purposes."""
         
-        # Create a simple test prompt
-        test_prompt = "What is artificial intelligence and how does it work?"
+    #     # Create a simple test prompt
+    #     test_prompt = "What is artificial intelligence and how does it work?"
         
-        # Apply memory processing
-        processed_prompt = memory.process(test_prompt)
+    #     # Apply memory processing
+    #     processed_prompt = memory.process(test_prompt)
         
-        # Generate response from model
-        response = await model.generate_text(
-            prompt=processed_prompt,
-            system="You are a helpful AI assistant.",
-            **benchmark_config.get("generation_params", {})
-        )
+    #     # Generate response from model
+    #     response = await model.generate_text(
+    #         prompt=processed_prompt,
+    #         system="You are a helpful AI assistant.",
+    #         **benchmark_config.get("generation_params", {})
+    #     )
         
-        # Simulate evaluation metrics
-        return {
-            "prompt_length": len(test_prompt.split()),
-            "processed_prompt_length": len(processed_prompt.split()),
-            "response_length": len(response.get("message", {}).get("content", "").split()),
-            "model_info": model.get_model_info(),
-            "memory_info": memory.get_method_info(),
-            "benchmark": benchmark,
-            "score": 0.85,  # Simulated score
-            "success": True
-        }
+    #     # Simulate evaluation metrics
+    #     return {
+    #         "prompt_length": len(test_prompt.split()),
+    #         "processed_prompt_length": len(processed_prompt.split()),
+    #         "response_length": len(response.get("message", {}).get("content", "").split()),
+    #         "model_info": model.get_model_info(),
+    #         "memory_info": memory.get_method_info(),
+    #         "benchmark": benchmark,
+    #         "score": 0.85,  # Simulated score
+    #         "success": True
+    #     }
     
     def _create_error_result(
         self, 

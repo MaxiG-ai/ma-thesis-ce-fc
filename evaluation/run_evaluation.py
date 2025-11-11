@@ -46,16 +46,31 @@ def load_config(config_path: str) -> dict:
 
 def validate_config(config: dict) -> None:
     """Validate that the configuration has required fields for multi-component evaluation."""
-    required_fields = ["memory_methods", "benchmarks"]
+    required_fields = ["memory_methods", "executed_benchmarks", "providers"]
     missing_fields = [field for field in required_fields if field not in config]
     
     if missing_fields:
         raise ValueError(f"Configuration missing required fields: {missing_fields}")
     
     # Validate that arrays are not empty
-    for field in required_fields:
-        if not config[field]:
+    for field in ["memory_methods", "executed_benchmarks"]:
+        if field in config and not config[field]:
             raise ValueError(f"Configuration field '{field}' cannot be empty")
+    
+    # Validate providers configuration
+    providers = config.get("providers", {})
+    if not providers:
+        raise ValueError("No providers configured")
+    
+    # Check that at least one provider has enabled models
+    has_enabled_models = False
+    for provider_name, provider_config in providers.items():
+        if provider_config.get("enabled_models"):
+            has_enabled_models = True
+            break
+    
+    if not has_enabled_models:
+        raise ValueError("No models enabled in any provider. Set enabled_models for at least one provider.")
     
     logger.info("Configuration validation passed")
 
@@ -121,14 +136,19 @@ async def main():
         validate_config(config)
         
         # Display configuration summary
-        # logger.info(f"Models: {config['model_names']}")
+        providers = config.get("providers", {})
+        total_enabled_models = sum(
+            len(provider_config.get("enabled_models", []))
+            for provider_config in providers.values()
+        )
+        logger.info(f"Enabled models: {total_enabled_models} across {len(providers)} providers")
         logger.info(f"Memory methods: {config['memory_methods']}")
-        logger.info(f"Benchmarks: {config['benchmarks']}")
+        logger.info(f"Benchmarks: {config['executed_benchmarks']}")
         
         total_combinations = (
-            # len(config['model_names']) * 
+            total_enabled_models * 
             len(config['memory_methods']) * 
-            len(config['benchmarks'])
+            len(config['executed_benchmarks'])
         )
         logger.info(f"Total combinations to evaluate: {total_combinations}")
         

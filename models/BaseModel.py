@@ -26,4 +26,9 @@ class BaseModel(ABC):
     def get_model_info(self) -> Dict[str, Any]:
         """Return model name, provider, version"""
         pass
+
+    @abstractmethod
+    def get_base_url(self) -> str:
+        """Return the base URL for the model provider."""
+        pass
     

@@ -10,7 +10,7 @@ import logging
 import os
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, cast
 from types import SimpleNamespace
 
 # Add parent directory to path for imports
@@ -18,11 +18,16 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from evaluation.BenchmarkAdapter import BenchmarkAdapter
 from datasets.mcp_bench.benchmark.runner import (
-    _create_runner_and_get_models,
+    BenchmarkRunner,
+    ConnectionManager,
     _determine_selected_models,
     _print_configuration,
-
 )
+from datasets.mcp_bench.utils.local_server_config import LocalServerConfigLoader
+from evaluation.mcp_bench.path_adjusted_server_manager import PathAdjustedServerManager
+from evaluation.mcp_bench.path_adjusted_connection_manager import PathAdjustedConnectionManager
+
+from models.registry import ModelRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +53,7 @@ class MCPBenchAdapter(BenchmarkAdapter):
             self.orchestrator_mode = True
         else:
             # Legacy mode - load from config file
-            super().__init__("mcpbench", config_path)
+            super().__init__("benchmarks.mcpbench", config_path)
             self.model_instance = None
             self.memory_instance = None
             self.orchestrator_mode = False
@@ -116,36 +121,79 @@ class MCPBenchAdapter(BenchmarkAdapter):
         
         return args
 
-    def parse_and_validate_args_from_config(self) -> tuple[SimpleNamespace, str, bool]:
-        """Config-driven replacement of _parse_and_validate_args from runner.py."""
-        args = self.parse_arguments_from_config()
+    async def create_config_aware_runner_and_get_models(self, args, tasks_file, enable_distraction_servers):
+        """Create a BenchmarkRunner with all config values properly injected from config.toml"""
         
-        # Configure logging
-        if args.verbose:
-            logging.getLogger().setLevel(logging.DEBUG)
+        # Monkey-patch the runner module to use our PathAdjustedConnectionManager
+        # This allows the runner to automatically adjust paths without modifying the submodule
+        import datasets.mcp_bench.benchmark.runner as runner_module
+        runner_module.ConnectionManager = PathAdjustedConnectionManager
+        logger.info("Patched ConnectionManager to use PathAdjustedConnectionManager for path adjustment")
         
-        # Use provided file paths
-        tasks_file = args.tasks_file
+        # Create config-aware LocalServerConfigLoader with correct paths
+        local_config_loader = LocalServerConfigLoader(
+            commands_json_path=self.cfg.get("server_commands_path", "datasets/mcp_bench/mcp_servers/commands.json"),
+            api_key_path=self.cfg.get("server_api_keys_path", "datasets/mcp_bench/mcp_servers/api_key")
+        )
         
-        # Check if files exist (handle comma-separated files)
-        if tasks_file:
-            if ',' in tasks_file:
-                # Multiple files specified
-                task_files = [f.strip() for f in tasks_file.split(',')]
-                for task_file in task_files:
-                    if not os.path.exists(task_file):
-                        logger.error(f"Tasks file not found: {task_file}")
-                        raise FileNotFoundError(f"Tasks file not found: {task_file}")
-            else:
-                # Single file specified
-                if not os.path.exists(tasks_file):
-                    logger.error(f"Tasks file not found: {tasks_file}")
-                    raise FileNotFoundError(f"Tasks file not found: {tasks_file}")
+        # Load model registry and configs
+        model_registry = ModelRegistry()
+        model_registry.load_from_config("evaluation/config.toml")
+        model_configs = model_registry.get_model_configs()
         
-        # Determine if distraction is enabled based on count
-        enable_distraction = args.distraction_count > 0
+        # Create judge provider from config
+        judge_model_name = self.cfg.get("judge_model", "meta-llama/llama-3.3-8b-instruct:free")
+        logger.info(f"Initializing judge model: {judge_model_name}")
         
-        return args, tasks_file, enable_distraction
+        if judge_model_name not in model_configs:
+            available = list(model_configs.keys())
+            raise ValueError(
+                f"Judge model '{judge_model_name}' not found in available models. "
+                f"Available models: {available}"
+            )
+        
+        # Import LLMFactory and ModelConfig to create judge provider
+        from datasets.mcp_bench.llm.factory import LLMFactory, ModelConfig
+        
+        # Get our registry's model config and convert to MCP Bench's ModelConfig
+        registry_config = model_configs[judge_model_name]
+        
+        # Create MCP Bench compatible ModelConfig
+        judge_model_config = ModelConfig(
+            name=registry_config.name,
+            provider_type=registry_config.provider_type,
+            **registry_config.config
+        )
+        
+        judge_provider = await LLMFactory.create_llm_provider(judge_model_config)
+        logger.info(f"Judge provider created successfully for model: {judge_model_name}")
+        
+        # Create BenchmarkRunner with all config values explicitly set to avoid defaults
+        runner = BenchmarkRunner(
+            tasks_file=tasks_file,
+            enable_distraction_servers=enable_distraction_servers,
+            distraction_count=self.cfg.get("distraction_count", 0),
+            enable_judge_stability=self.cfg.get("enable_judge_stability", True),
+            filter_problematic_tools=self.cfg.get("filter_problematic_tools", True),
+            concurrent_summarization=self.cfg.get("concurrent_summarization", True),
+            use_fuzzy_descriptions=self.cfg.get("use_fuzzy_descriptions", False),
+            local_config_loader=local_config_loader,  # Inject config-aware loader
+            judge_provider=judge_provider,  # Inject judge provider
+        )
+        
+        # Always load commands_config to avoid NoneType errors in _prepare_server_configs
+        # The runner checks self.commands_config even when distraction is disabled
+        runner.commands_config = await runner.load_commands_config()
+        logger.info(f"Loaded commands configuration: {len(runner.commands_config)} servers")
+
+        
+        # Cast registry model configs to a generic mapping to satisfy static type checkers
+        runner.model_configs = cast(Dict[str, Any], model_configs)
+        
+        # Get available models from the runner
+        available_models = list(runner.model_configs.keys())
+        
+        return runner, available_models
 
     async def run_benchmark(
         self,
@@ -163,21 +211,16 @@ class MCPBenchAdapter(BenchmarkAdapter):
             self.cfg["task_limit"] = 1
         
         # Step 1 - Parse and validate arguments pulled from `config.toml`
-        args, tasks_file, enable_distraction_servers = self.parse_and_validate_args_from_config()
+        args = self.parse_arguments_from_config()
+        tasks_file = self.cfg.get("tasks_file", None)
+        enable_distraction_servers = args.distraction_count > 0
+        
+        logger.info(f"Using tasks file: {tasks_file}")
 
-        # Step 2 - Create runner and get models
-        if self.orchestrator_mode:
-            # In orchestrator mode, we need to create a compatible runner
-            # For now, we'll use the existing approach but this could be enhanced
-            # to work directly with the orchestrator's model instance
-            self._runner, self._selected_models = _create_runner_and_get_models(
-                args, tasks_file, enable_distraction_servers
-            )
-        else:
-            # Legacy mode
-            self._runner, self._selected_models = _create_runner_and_get_models(
-                args, tasks_file, enable_distraction_servers
-            )
+        # Step 2 - Create runner and get models using config-aware factory
+        self._runner, self._selected_models = await self.create_config_aware_runner_and_get_models(
+            args, tasks_file, enable_distraction_servers
+        )
 
         # Log the models used
         if args.list_models:
@@ -192,8 +235,10 @@ class MCPBenchAdapter(BenchmarkAdapter):
         if self.orchestrator_mode and self.model_instance is not None:
             # Use the model name from orchestrator
             model_info = self.model_instance.get_model_info()
-            model_name = model_info.get("name", "unknown") if isinstance(model_info, dict) else "unknown"
+            # get_model_info() returns {'model': model_name, 'provider': provider_name}
+            model_name = model_info.get("model", "unknown") if isinstance(model_info, dict) else "unknown"
             selected_models = [model_name]
+            logger.info(f"Orchestrator mode: using model '{model_name}' from model instance")
         else:
             selected_models = _determine_selected_models(args, self._selected_models)
 

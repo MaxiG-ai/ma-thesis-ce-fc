@@ -11,6 +11,7 @@ class OpenRouterModel(BaseModel): #TODO: Properly implement OpenRouterModel clas
     """Provides a connector to local OpenRouter"""
     def __init__(self, model_name: str, **kwargs):
         self.model_name = model_name
+        self.base_url = "https://openrouter.ai/api/v1"
 
     def chatresponse_to_dict(self, response):
         """Convert ChatResponse object to dictionary format"""
@@ -60,7 +61,7 @@ class OpenRouterModel(BaseModel): #TODO: Properly implement OpenRouterModel clas
     def _generate_client(self):
 
         client = openai.OpenAI(
-            base_url="https://openrouter.ai/api/v1",
+            base_url=self.get_base_url(),
             api_key=os.getenv("OPENROUTER_API_KEY"),
         )
     
@@ -68,3 +69,6 @@ class OpenRouterModel(BaseModel): #TODO: Properly implement OpenRouterModel clas
         
     def get_model_info(self):
         return {'model': self.model_name, 'provider' : 'openrouter'}
+
+    def get_base_url(self) -> str:
+        return self.base_url

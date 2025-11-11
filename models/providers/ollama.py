@@ -50,3 +50,6 @@ class OllamaModel(BaseModel):
         
     def get_model_info(self):
         return {'model': self.model_name, 'provider' : 'ollama'}
+    
+    def get_base_url(self) -> str:
+        return "http://localhost:11434/v1"
