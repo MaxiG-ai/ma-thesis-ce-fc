@@ -196,12 +196,25 @@ class EvaluationOrchestrator:
         memory_method: str, 
         benchmark: str
     ) -> Dict[str, Any]:
-        """Run single evaluation with error handling."""
+        """Run single evaluation with comprehensive error handling."""
         try:
             return await self._run_single_evaluation(model_spec, memory_method, benchmark)
         except Exception as e:
-            logger.error(f"Failed evaluation {model_spec['name']} × {memory_method} × {benchmark}: {e}")
-            return self._create_error_result(model_spec, memory_method, benchmark, str(e))
+            error_context = {
+                "model": model_spec['name'],
+                "provider": model_spec.get('provider', 'unknown'),
+                "memory_method": memory_method,
+                "benchmark": benchmark,
+                "error_type": type(e).__name__,
+                "error_message": str(e)
+            }
+            
+            logger.error(f"Failed evaluation {model_spec['name']} × {memory_method} × {benchmark}")
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"Error message: {str(e)}")
+            logger.exception("Full error traceback:")
+            
+            return self._create_error_result(model_spec, memory_method, benchmark, error_context)
     
     async def _run_single_evaluation(
         self, 
@@ -291,9 +304,9 @@ class EvaluationOrchestrator:
         model_spec: Dict[str, Any], 
         memory_method: str, 
         benchmark: str, 
-        error: str
+        error: Any
     ) -> Dict[str, Any]:
-        """Create error result entry."""
+        """Create error result entry with support for both string and structured error data."""
         return {
             "timestamp": datetime.now().isoformat(),
             "model": model_spec,

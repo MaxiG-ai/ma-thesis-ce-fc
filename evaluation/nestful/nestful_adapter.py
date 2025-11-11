@@ -17,7 +17,7 @@ from datasets.nestful.src.instruct_data_prep import (
 )
 
 from langchain_ollama.llms import OllamaLLM
-from BenchmarkAdapter import BenchmarkAdapter
+from evaluation.BenchmarkAdapter import BenchmarkAdapter
 
 class NestfulAdapter(BenchmarkAdapter):
     
@@ -108,6 +108,15 @@ class NestfulAdapter(BenchmarkAdapter):
         
         return full_config[section]
 
+    def _is_model_supported(self, model_name: str) -> bool:
+        """Check if model name is found in any supported model category."""
+        if not self.supported_models:
+            return False
+        
+        for category_models in self.supported_models.values():
+            if isinstance(category_models, list) and model_name in category_models:
+                return True
+        return False
 
     def _get_instruct_data(self, data, model, model_name, icl_ex_count=3, data_limit=None):
         if data_limit is not None:
@@ -129,10 +138,22 @@ class NestfulAdapter(BenchmarkAdapter):
             elif model_name in self.DEEPSEEK:
                 input_prompt = deepseek_prompt_input(sample['input'], sample["tools"], icl_str)
             else:
-                try:
-                    input_prompt = prompt_dict[model_name].format(FUNCTION_STR=json.dumps(sample['tools']), ICL_EXAMPLES=icl_str, QUERY=sample['input'])
-                except KeyError:
-                    input_prompt = prompt_dict[model_name].replace('{FUNCTION_STR}', json.dumps(sample['tools'])).replace("{ICL_EXAMPLES}", icl_str).replace('{QUERY}', sample['input'])
+                # Try to find a prompt template for the specific model
+                if model_name in prompt_dict:
+                    try:
+                        input_prompt = prompt_dict[model_name].format(FUNCTION_STR=json.dumps(sample['tools']), ICL_EXAMPLES=icl_str, QUERY=sample['input'])
+                    except KeyError:
+                        input_prompt = prompt_dict[model_name].replace('{FUNCTION_STR}', json.dumps(sample['tools'])).replace("{ICL_EXAMPLES}", icl_str).replace('{QUERY}', sample['input'])
+                else:
+                    # Use a generic fallback prompt for unsupported models
+                    # Using LLaMa-3.1 as a generic template since it's well-structured
+                    fallback_template = prompt_dict.get("LLaMa-3.1", 
+                        "You are a helpful assistant. Use the following functions: {FUNCTION_STR}\n\nExamples: {ICL_EXAMPLES}\n\nQuery: {QUERY}")
+                    input_prompt = fallback_template.format(FUNCTION_STR=json.dumps(sample['tools']), ICL_EXAMPLES=icl_str, QUERY=sample['input'])
+                    
+                    # Log fallback usage for the first sample to avoid spam
+                    if sample == data[0]:
+                        print(f"Using fallback prompt template for unsupported model: {model_name}")
             test_data.append(
                 {
                     "sample_id": sample['sample_id'],
@@ -160,12 +181,25 @@ class NestfulAdapter(BenchmarkAdapter):
             sample_id = data[0].get('sample_id', 'unknown') if isinstance(data[0], dict) else 'unknown'
             print(f"### Demo mode: Running with 1 random task (ID: {sample_id})")
         
-        # Get model name for prompt processing
+        # Get model name for prompt processing with validation
         if self.orchestrator_mode and self.model_instance is not None:
             model_info = self.model_instance.get_model_info()
-            model_name = model_info.get("name", "unknown") if isinstance(model_info, dict) else "unknown"
+            # Handle different model info formats - OpenRouter uses 'model', others might use 'name'
+            model_name = model_info.get("model") or model_info.get("name", "unknown") if isinstance(model_info, dict) else "unknown"
+            
+            # Validate model name was extracted successfully
+            if model_name == "unknown":
+                raise ValueError(f"Could not extract model name from model info: {model_info}")
         else:
             model_name = self.cfg.get("model_name", "unknown")
+            if model_name == "unknown":
+                raise ValueError("Model name not specified in configuration")
+        
+        # Validate model name is supported for prompt processing
+        if not self._is_model_supported(model_name):
+            supported_categories = list(self.supported_models.keys()) if self.supported_models else []
+            print(f"Warning: Model '{model_name}' not found in supported model categories: {supported_categories}")
+            print(f"Will attempt to use generic prompt template.")
             
         instruct_data = self._get_instruct_data(
             data,
