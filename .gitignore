@@ -31,3 +31,5 @@ uv.lock
 # all result files
 results/*
 evaluation/results/nestful_3/google/gemma-3-27b-it:free/output.jsonl
+evaluation/mcp_bench/api_key
+cache/tool_cache.db

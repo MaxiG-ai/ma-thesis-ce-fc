@@ -19,13 +19,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from evaluation.BenchmarkAdapter import BenchmarkAdapter
 from datasets.mcp_bench.benchmark.runner import (
     BenchmarkRunner,
-    ConnectionManager,
     _determine_selected_models,
     _print_configuration,
 )
 from datasets.mcp_bench.utils.local_server_config import LocalServerConfigLoader
-from evaluation.mcp_bench.path_adjusted_server_manager import PathAdjustedServerManager
-from evaluation.mcp_bench.path_adjusted_connection_manager import PathAdjustedConnectionManager
 
 from models.registry import ModelRegistry
 
@@ -82,7 +79,6 @@ class MCPBenchAdapter(BenchmarkAdapter):
     # - How to handle distraction servers?
     # - Where to handle the LLM as a judge server?
 
-    # TODO: replace Step 1: with config-driven approach
 
     def get_selected_models(self) -> List[str]:
         """Get the list of models to run."""
@@ -124,16 +120,10 @@ class MCPBenchAdapter(BenchmarkAdapter):
     async def create_config_aware_runner_and_get_models(self, args, tasks_file, enable_distraction_servers):
         """Create a BenchmarkRunner with all config values properly injected from config.toml"""
         
-        # Monkey-patch the runner module to use our PathAdjustedConnectionManager
-        # This allows the runner to automatically adjust paths without modifying the submodule
-        import datasets.mcp_bench.benchmark.runner as runner_module
-        runner_module.ConnectionManager = PathAdjustedConnectionManager
-        logger.info("Patched ConnectionManager to use PathAdjustedConnectionManager for path adjustment")
-        
         # Create config-aware LocalServerConfigLoader with correct paths
         local_config_loader = LocalServerConfigLoader(
-            commands_json_path=self.cfg.get("server_commands_path", "datasets/mcp_bench/mcp_servers/commands.json"),
-            api_key_path=self.cfg.get("server_api_keys_path", "datasets/mcp_bench/mcp_servers/api_key")
+            commands_json_path=self.cfg.get("server_commands_path", "No File provided"),
+            api_key_path=self.cfg.get("server_api_keys_path", "No File provided"),
         )
         
         # Load model registry and configs
@@ -164,6 +154,7 @@ class MCPBenchAdapter(BenchmarkAdapter):
             provider_type=registry_config.provider_type,
             **registry_config.config
         )
+        
         
         judge_provider = await LLMFactory.create_llm_provider(judge_model_config)
         logger.info(f"Judge provider created successfully for model: {judge_model_name}")

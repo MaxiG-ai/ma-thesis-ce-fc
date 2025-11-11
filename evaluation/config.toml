@@ -15,13 +15,13 @@ concurrent_evaluations = 1  # Number of parallel evaluations
 # Provider-specific configurations
 [providers.ollama]
 models = ["gemma3:270m", "llama3.2:3b", ]
-enabled_models = [] # ["gemma3:270m"] # ["llama3.2:3b"]
+enabled_models = ["gemma3:270m"] # ["gemma3:270m"] # ["llama3.2:3b"]
 temperature = 0.3
 max_tokens = 5000
 
 [providers.openrouter]
 models = ["google/gemma-3-27b-it:free", "meta-llama/llama-3.3-8b-instruct:free"]
-enabled_models = ["meta-llama/llama-3.3-8b-instruct:free"] # ["google/gemma-3-27b-it:free"]
+enabled_models = [] #["meta-llama/llama-3.3-8b-instruct:free"] # ["google/gemma-3-27b-it:free"]
 temperature = 0.3
 max_tokens = 8000
 
@@ -63,5 +63,5 @@ results_dir = "results/mcpbench"
 demo = false
 
 # Server configuration paths
-server_commands_path = "datasets/mcp_bench/mcp_servers/commands.json"
-server_api_keys_path = "datasets/mcp_bench/mcp_servers/api_key"
+server_commands_path = "evaluation/mcp_bench/commands_short_working.json"
+server_api_keys_path = "evaluation/mcp_bench/mcp_servers/api_key"

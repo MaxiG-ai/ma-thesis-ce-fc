@@ -201,7 +201,7 @@ class ModelRegistry:
                     configs[model_name] = ModelConfig(
                         name=model_name,
                         provider_type="openai_compatible",
-                        api_key=None,
+                        api_key="empty_key",  # Ollama does not require an API key, but LLMFactory expects one
                         base_url="http://localhost:11434/v1",
                         model_name=model_name
                     )
