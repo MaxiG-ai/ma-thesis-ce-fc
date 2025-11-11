@@ -1,9 +1,40 @@
-:"""Configuration utilities for provider-specific model management."""
+"""Configuration utilities for provider-specific model management."""
 
 from typing import Dict, List, Any
 import logging
+import tomllib
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def load_config(config_path: str) -> Dict[str, Any]:
+    """Load configuration from TOML file.
+    
+    Args:
+        config_path: Path to the TOML configuration file
+        
+    Returns:
+        Configuration dictionary
+        
+    Raises:
+        FileNotFoundError: If config file doesn't exist
+        ValueError: If config file is invalid
+    """
+    config_file = Path(config_path)
+    if not config_file.exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+    
+    try:
+        with open(config_file, "rb") as f:
+            config = tomllib.load(f)
+        
+        # Validate the configuration
+        validate_provider_config(config)
+        
+        return config
+    except Exception as e:
+        raise ValueError(f"Failed to load config from {config_path}: {e}")
 
 def validate_provider_config(config: Dict[str, Any]) -> None:
     """Validate provider configuration structure."""

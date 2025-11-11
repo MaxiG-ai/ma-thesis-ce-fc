@@ -13,6 +13,7 @@ sys.path.insert(0, str(project_root))
 from models.registry import ModelRegistry
 from memory.registry import MemoryRegistry
 from evaluation.BenchmarkAdapter import BenchmarkAdapter
+# Benchmark adapters will be imported lazily when needed
 
 
 class BenchmarkRegistry:
@@ -91,3 +92,4 @@ class ComponentRegistry:
     def get_memory_method_info(cls, method_name: str) -> Dict[str, Any]:
         """Get memory method information."""
         return MemoryRegistry.get_method_info(method_name)
+

@@ -17,6 +17,9 @@ sys.path.insert(0, str(project_root))
 from evaluation.registries import ComponentRegistry
 from evaluation.results import ResultsStorage
 
+from evaluation.mcp_bench.mcpbench_adapter import MCPBenchAdapter
+from evaluation.nestful.nestful_adapter import NestfulAdapter
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,10 +44,13 @@ class EvaluationOrchestrator:
             from models.registry import ModelRegistry
             ModelRegistry.update_provider_catalog(providers_config)
         
+        # Auto-register benchmarks from config
+        self._register_benchmarks_from_config()
+        
         # Extract component lists from config
         self.model_specs = self._parse_model_specs()
         self.memory_methods = self.config.get("memory_methods", ["truncation"])
-        self.benchmarks = self.config.get("benchmarks", ["nestful"])
+        self.benchmarks = self.config.get("executed_benchmarks", [])
         
         # Configuration options
         self.concurrent_evaluations = self.config.get("concurrent_evaluations", 1)
@@ -107,6 +113,27 @@ class EvaluationOrchestrator:
         
         logger.info(f"Loaded {len(models)} enabled models across {len(providers_config)} providers")
         return models
+    
+    def _register_benchmarks_from_config(self):
+        """Automatically register benchmarks based on config file."""
+        benchmark_configs = self.config.get("executed_benchmarks", [])
+
+        for benchmark_name in benchmark_configs:
+            try:
+                if benchmark_name == "nestful":
+                    from evaluation.nestful.nestful_adapter import NestfulAdapter
+                    self.registry.register_benchmark("nestful", NestfulAdapter)
+                    logger.info(f"Registered benchmark: {benchmark_name}")
+                elif benchmark_name == "mcpbench":
+                    from evaluation.mcp_bench.mcpbench_adapter import MCPBenchAdapter
+                    self.registry.register_benchmark("mcpbench", MCPBenchAdapter)
+                    logger.info(f"Registered benchmark: {benchmark_name}")
+                else:
+                    logger.warning(f"Unknown benchmark '{benchmark_name}' in config - skipping")
+            except ImportError as e:
+                logger.error(f"Failed to import adapter for benchmark '{benchmark_name}': {e}")
+            except Exception as e:
+                logger.error(f"Failed to register benchmark '{benchmark_name}': {e}")
     
     def _generate_combinations(self) -> Iterator[Tuple[Dict[str, Any], str, str]]:
         """Generate all combinations of models × memory methods × benchmarks."""
@@ -195,23 +222,22 @@ class EvaluationOrchestrator:
         
         memory = self.registry.create_memory_method(
             method_name=memory_method,
-            **self.config.get(f"{memory_method}_config", {})
+            **self.config.get("memoryMethods", {}).get(memory_method, {})
         )
         
-        # For benchmarks, we need to determine the appropriate configuration
-        benchmark_config = self.config.get(benchmark, {})
+        # Get benchmark configuration from the new structure
+        benchmark_config = self.config.get("benchmarks", {}).get(benchmark, {})
         
-        # Create benchmark - for now we'll use a mock approach since we don't have 
-        # concrete benchmark implementations registered
-        # benchmark_instance = self.registry.create_benchmark(
-        #     benchmark_name=benchmark,
-        #     **benchmark_config
-        # )
-        
-        # For now, simulate benchmark execution -> TODO: Integrate with real benchmarks
-        benchmark_results = await self._simulate_benchmark_execution(
-            model, memory, benchmark, benchmark_config
+        # Create benchmark instance with model, memory, and configuration
+        benchmark_instance = self.registry.create_benchmark(
+            benchmark_name=benchmark,
+            model_instance=model,
+            memory_instance=memory,
+            benchmark_config=benchmark_config
         )
+        
+        # Execute real benchmark
+        benchmark_results = await benchmark_instance.run_benchmark()
         
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()

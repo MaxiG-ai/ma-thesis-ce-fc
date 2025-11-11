@@ -30,13 +30,29 @@ logger = logging.getLogger(__name__)
 class MCPBenchAdapter(BenchmarkAdapter):
     """Adapter for MCP Benchmark evaluation."""
     
-    def __init__(self, config_path: str = "evaluation/config.toml"):
+    def __init__(self, model_instance=None, memory_instance=None, benchmark_config=None, config_path: str = "evaluation/config.toml"):
         """Initialize the MCP Bench adapter.
         
         Args:
-            config_path: Path to config.toml file. Defaults to "evaluation/config.toml".
+            model_instance: Model instance from orchestrator (preferred)
+            memory_instance: Memory method instance from orchestrator (preferred)  
+            benchmark_config: Benchmark configuration from orchestrator (preferred)
+            config_path: Path to config.toml file for legacy mode
         """
-        super().__init__("mcpbench", config_path)
+        # Handle orchestrator mode vs legacy mode
+        if model_instance is not None and benchmark_config is not None:
+            # Orchestrator mode - use passed instances and config
+            self.model_instance = model_instance
+            self.memory_instance = memory_instance
+            self.cfg = benchmark_config
+            self.orchestrator_mode = True
+        else:
+            # Legacy mode - load from config file
+            super().__init__("mcpbench", config_path)
+            self.model_instance = None
+            self.memory_instance = None
+            self.orchestrator_mode = False
+            
         self._runner = None
         self._last_results = None
 
@@ -138,13 +154,30 @@ class MCPBenchAdapter(BenchmarkAdapter):
         Execute benchmark tasks using the specified model(s).
         Implementation of the abstract method from BenchmarkAdapter.
         """
+        # Handle demo mode - modify task limit
+        original_task_limit = None
+        if self.cfg.get("demo", False):
+            logger.info("Demo mode: Running with 1 random task")
+            # Override task_limit for demo mode
+            original_task_limit = self.cfg.get("task_limit")
+            self.cfg["task_limit"] = 1
+        
         # Step 1 - Parse and validate arguments pulled from `config.toml`
         args, tasks_file, enable_distraction_servers = self.parse_and_validate_args_from_config()
 
         # Step 2 - Create runner and get models
-        self._runner, self._selected_models = _create_runner_and_get_models(
-            args, tasks_file, enable_distraction_servers
-        )
+        if self.orchestrator_mode:
+            # In orchestrator mode, we need to create a compatible runner
+            # For now, we'll use the existing approach but this could be enhanced
+            # to work directly with the orchestrator's model instance
+            self._runner, self._selected_models = _create_runner_and_get_models(
+                args, tasks_file, enable_distraction_servers
+            )
+        else:
+            # Legacy mode
+            self._runner, self._selected_models = _create_runner_and_get_models(
+                args, tasks_file, enable_distraction_servers
+            )
 
         # Log the models used
         if args.list_models:
@@ -156,7 +189,13 @@ class MCPBenchAdapter(BenchmarkAdapter):
             print(f"  python {sys.argv[0]} --models {self._selected_models[0] if self._selected_models else 'MODEL_NAME'}")
 
         # Step 3: Determine which models to test
-        selected_models = _determine_selected_models(args, self._selected_models)
+        if self.orchestrator_mode and self.model_instance is not None:
+            # Use the model name from orchestrator
+            model_info = self.model_instance.get_model_info()
+            model_name = model_info.get("name", "unknown") if isinstance(model_info, dict) else "unknown"
+            selected_models = [model_name]
+        else:
+            selected_models = _determine_selected_models(args, self._selected_models)
 
         # Step 4: Print configuration
         _print_configuration(selected_models, self._selected_models, self._runner, args)
@@ -169,8 +208,8 @@ class MCPBenchAdapter(BenchmarkAdapter):
                 # task_limit=task_limit
             )
             
-            # Save results to JSON file
-            if results:
+            # Save results to JSON file (only if not in demo mode)
+            if results and not self.cfg.get("demo", False):
                 output_file = args.output if args.output else f'benchmark_results_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
                 try:
                     with open(output_file, 'w', encoding='utf-8') as f:
@@ -179,6 +218,12 @@ class MCPBenchAdapter(BenchmarkAdapter):
                     logger.info("The overall score is calculated as the average of four main dimensions: schema understanding, task completion, tool usage, and planning effectiveness. Within each dimension (e.g., schema understanding), we first compute the mean across its sub-dimensions.")
                 except Exception as save_error:
                     logger.error(f"Failed to save results to {output_file}: {save_error}")
+            
+            # Add demo mode indicator to results
+            if results and self.cfg.get("demo", False):
+                if "metadata" not in results:
+                    results["metadata"] = {}
+                results["metadata"]["demo_mode"] = True
                     
             return results
     
@@ -187,6 +232,11 @@ class MCPBenchAdapter(BenchmarkAdapter):
             import traceback
             logger.error(f"Full traceback: {traceback.format_exc()}")
             raise
+        finally:
+            # Restore original task_limit if demo mode was used
+            if self.cfg.get("demo", False):
+                if 'original_task_limit' in locals():
+                    self.cfg["task_limit"] = original_task_limit
 
     def evaluate_result(self):
         return super().evaluate_result()
