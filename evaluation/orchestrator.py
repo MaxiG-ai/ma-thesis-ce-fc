@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import List, Dict, Any, Iterator, Tuple, Type
 from datetime import datetime
 import logging
+from mcp_bench.mcpbench_adapter import MCPBenchAdapter
+from nestful.nestful_adapter import NestfulAdapter
 
 # Add project root to path for imports
 project_root = Path(__file__).parent.parent
@@ -18,8 +20,6 @@ from models.registry import ModelRegistry
 from memory.registry import MemoryRegistry
 from evaluation.results import ResultsStorage
 
-from evaluation.mcp_bench.mcpbench_adapter import MCPBenchAdapter
-from evaluation.nestful.nestful_adapter import NestfulAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +82,8 @@ class EvaluationOrchestrator:
             provider = model_spec["provider"]
             providers_summary[provider] = providers_summary.get(provider, 0) + 1
         
-        logger.info(f"Initialized orchestrator:")
+        logger.info(15*"###")
+        logger.info("Initialized orchestrator:")
         logger.info(f"  Models: {len(self.model_specs)} total")
         for provider, count in providers_summary.items():
             logger.info(f"    {provider}: {count} models")
@@ -138,17 +139,18 @@ class EvaluationOrchestrator:
     def _register_benchmarks_from_config(self):
         """Automatically register benchmarks based on config file."""
         benchmark_configs = self.config.get("executed_benchmarks", [])
+        logger.info(f"Registering benchmarks from config: {benchmark_configs}")
 
         for benchmark_name in benchmark_configs:
             try:
                 if benchmark_name == "nestful":
                     from evaluation.nestful.nestful_adapter import NestfulAdapter
                     BenchmarkRegistry.register_benchmark("nestful", NestfulAdapter)
-                    logger.info(f"Registered benchmark: {benchmark_name}")
+                    logger.debug(f"Registered benchmark: {benchmark_name}")
                 elif benchmark_name == "mcpbench":
                     from evaluation.mcp_bench.mcpbench_adapter import MCPBenchAdapter
                     BenchmarkRegistry.register_benchmark("mcpbench", MCPBenchAdapter)
-                    logger.info(f"Registered benchmark: {benchmark_name}")
+                    logger.debug(f"Registered benchmark: {benchmark_name}")
                 else:
                     logger.warning(f"Unknown benchmark '{benchmark_name}' in config - skipping")
             except ImportError as e:
@@ -285,40 +287,6 @@ class EvaluationOrchestrator:
             "results": benchmark_results,
             "status": "success"
         }
-    
-    # async def _simulate_benchmark_execution(
-    #     self, 
-    #     model, 
-    #     memory, 
-    #     benchmark: str, 
-    #     benchmark_config: Dict[str, Any]
-    # ) -> Dict[str, Any]:
-    #     """Simulate benchmark execution for testing purposes."""
-        
-    #     # Create a simple test prompt
-    #     test_prompt = "What is artificial intelligence and how does it work?"
-        
-    #     # Apply memory processing
-    #     processed_prompt = memory.process(test_prompt)
-        
-    #     # Generate response from model
-    #     response = await model.generate_text(
-    #         prompt=processed_prompt,
-    #         system="You are a helpful AI assistant.",
-    #         **benchmark_config.get("generation_params", {})
-    #     )
-        
-    #     # Simulate evaluation metrics
-    #     return {
-    #         "prompt_length": len(test_prompt.split()),
-    #         "processed_prompt_length": len(processed_prompt.split()),
-    #         "response_length": len(response.get("message", {}).get("content", "").split()),
-    #         "model_info": model.get_model_info(),
-    #         "memory_info": memory.get_method_info(),
-    #         "benchmark": benchmark,
-    #         "score": 0.85,  # Simulated score
-    #         "success": True
-    #     }
     
     def _create_error_result(
         self, 

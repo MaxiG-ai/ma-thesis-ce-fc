@@ -51,27 +51,9 @@ class NestfulAdapter(BenchmarkAdapter):
             self.LLAMA_MODELS = supported_models.get("LLAMA_MODELS", [])
             self.DEEPSEEK = supported_models.get("DEEPSEEK", [])
             self.supported_models = supported_models
-            
         else:
-            # Legacy mode - load from config file
-            if cfg_path is None:
-                cfg_path = "config.toml"
-            config_path = os.path.join(os.path.dirname(__file__), cfg_path)
-            full_config = toml.load(config_path)
-            cfg = full_config.get("nestful")
-            if cfg is None:
-                raise ValueError("Invalid config file")
-            self.cfg = cfg
-            self.model_instance = None
-            self.memory_instance = None
-            self.orchestrator_mode = False
-            
-            # Set up supported models from config
-            self.supported_models = cfg["supported_models"]
-            self.GRANITE_MODELS = self.supported_models["GRANITE_MODELS"]
-            self.GRANITE_3_1_MODELS = self.supported_models["GRANITE_3_1_MODELS"]
-            self.LLAMA_MODELS = self.supported_models["LLAMA_MODELS"]
-            self.DEEPSEEK = self.supported_models["DEEPSEEK"]
+            raise ValueError("NestfulAdapter requires model_instance and benchmark_config for orchestrator mode.")    
+        
 
     @classmethod
     def load_config_from_file(
@@ -277,9 +259,8 @@ class NestfulAdapter(BenchmarkAdapter):
         if not self.cfg.get("demo", False):
             icl_count = self.cfg["icl_count"]
             save_path = os.path.join(
-                self.base_dir,
-                "..",
-                self.cfg["save_directory"],
+                self.project_root,
+                self.cfg["results_dir"],
                 f"nestful_{icl_count}",
                 model_name,
                 "output.jsonl"

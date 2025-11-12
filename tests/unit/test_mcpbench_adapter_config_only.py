@@ -12,7 +12,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from evaluation.mcpbench_adapter import MCPBenchAdapter
+from evaluation.mcp_bench.mcpbench_adapter import MCPBenchAdapter
 
 
 class TestMCPBenchAdapterConfigFile:
@@ -24,7 +24,7 @@ class TestMCPBenchAdapterConfigFile:
             f.write("""
 model_names = ["llama3.2:3b"]
 
-[mcpbench]
+[datasets.mcpbench]
 provider = "ollama"
 tasks_file = "datasets/mcp_bench/tasks/mcpbench_tasks_single_runner_format.json"
 temperature = 0.3

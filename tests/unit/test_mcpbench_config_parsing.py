@@ -15,7 +15,7 @@ from types import SimpleNamespace
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from evaluation.mcpbench_adapter import MCPBenchAdapter
+from evaluation.mcp_bench.mcpbench_adapter import MCPBenchAdapter
 
 
 class TestMCPBenchAdapterConfigParsing:
@@ -28,7 +28,7 @@ class TestMCPBenchAdapterConfigParsing:
             f.write("""
 model_names = ["llama3.2:3b"]
 
-[mcpbench]
+[datasets.mcpbench]
 provider = "ollama"
 tasks_file = "test_tasks.json"
 temperature = 0.3
@@ -76,7 +76,7 @@ cache_dir = "test_cache"
             f.write("""
 model_names = ["test_model"]
 
-[mcpbench]
+[datasets.mcpbench]
 provider = "ollama"
 """)
             config_path = f.name
@@ -108,7 +108,7 @@ provider = "ollama"
             f.write("""
 model_names = ["test_model"]
 
-[mcpbench]
+[datasets.mcpbench]
 tasks_file = "datasets/mcp_bench/tasks/mcpbench_tasks_single_runner_format.json"
 distraction_count = 5
 verbose = true
@@ -135,7 +135,7 @@ verbose = true
             f.write("""
 model_names = ["test_model"]
 
-[mcpbench]
+[datasets.mcpbench]
 tasks_file = "datasets/mcp_bench/tasks/mcpbench_tasks_single_runner_format.json"
 distraction_count = 0
 """)
@@ -157,7 +157,7 @@ distraction_count = 0
             f.write("""
 model_names = ["test_model"]
 
-[mcpbench]
+[datasets.mcpbench]
 tasks_file = "nonexistent_file.json"
 """)
             config_path = f.name
@@ -177,7 +177,7 @@ tasks_file = "nonexistent_file.json"
             f.write("""
 model_names = ["test_model"]
 
-[mcpbench]
+[datasets.mcpbench]
 tasks_file = "file1.json,file2.json"
 """)
             config_path = f.name
@@ -197,7 +197,7 @@ tasks_file = "file1.json,file2.json"
             f.write("""
 model_names = ["model1", "model2"]
 
-[mcpbench]
+[datasets.mcpbench]
 provider = "ollama"
 tasks_file = "tasks.json"
 temperature = 0.5

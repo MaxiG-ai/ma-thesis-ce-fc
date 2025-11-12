@@ -91,12 +91,12 @@ class MCPBenchAdapter(BenchmarkAdapter):
         args = SimpleNamespace()
         
         # Model selection
-        args.models = self.cfg.get("model_names", ["o4-mini"])
+        args.models = self.cfg.get("model_names", [])
         args.list_models = False  # This is a command-line only flag
         
         # File paths
         args.tasks_file = self.cfg.get("tasks_file", None)
-        args.output = self.cfg.get("output", None)
+        args.results_dir = self.cfg.get("results_dir", None)
         
         # Logging
         args.verbose = self.cfg.get("verbose", False)
@@ -246,7 +246,8 @@ class MCPBenchAdapter(BenchmarkAdapter):
             
             # Save results to JSON file (only if not in demo mode)
             if results and not self.cfg.get("demo", False):
-                output_file = args.output if args.output else f'benchmark_results_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+                now = datetime.now().strftime("%Y%m%d_%H%M%S")
+                output_file = f"{args.results_dir}/benchmark_results_{now}.json" if args.results_dir else f'benchmark_results_{now}.json'
                 try:
                     with open(output_file, 'w', encoding='utf-8') as f:
                         json.dump(results, f, indent=2, ensure_ascii=False)

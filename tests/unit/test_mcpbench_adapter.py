@@ -302,7 +302,7 @@ class TestMCPBenchAdapterConfigLoading:
         from evaluation.mcpbench_adapter import MCPBenchAdapter
         
         config_content = """
-[mcpbench]
+[datasets.mcpbench]
 model = "ollama"
 model_name = "llama3.1:8b"
 tasks_file = "datasets/mcp_bench/tasks/tasks.json"
