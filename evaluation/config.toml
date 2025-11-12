@@ -6,7 +6,7 @@
 
 # Global Settings
 memory_methods = ["truncation"]
-executed_benchmarks = ["mcpbench"] # choose one or more from "nestful", "mcpbench",
+executed_benchmarks = ["nestful", "mcpbench"] # choose one or more from "nestful", "mcpbench",
 
 # Evaluation Configuration
 results_dir = "results"
@@ -21,7 +21,7 @@ max_tokens = 5000
 
 [providers.openrouter]
 models = ["google/gemma-3-27b-it:free", "meta-llama/llama-3.3-8b-instruct:free"]
-enabled_models = [] #["meta-llama/llama-3.3-8b-instruct:free"] # ["google/gemma-3-27b-it:free"]
+enabled_models = ["meta-llama/llama-3.3-8b-instruct:free"] #["meta-llama/llama-3.3-8b-instruct:free"] # ["google/gemma-3-27b-it:free"]
 temperature = 0.3
 max_tokens = 8000
 
@@ -40,7 +40,7 @@ max_tokens = 1000
 batch_size = 1
 icl_count = 3
 data_limit = 3
-save_directory = "results"
+results_dir = "results"
 demo = false
 
 # Using inline table syntax for supported_models
